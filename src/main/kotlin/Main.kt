@@ -1,11 +1,69 @@
-import io.github.cdimascio.dotenv.dotenv
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.github.cdimascio.dotenv.Dotenv
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+import io.ktor.client.request.forms.FormDataContent
+import io.ktor.util.*
 
-fun main() {
-    // Load .env file
-    val dotenv = dotenv()
-    val clientId = dotenv["UID"] ?: error("UID is missing in .env file")
-    val clientSecret = dotenv["SECRET"] ?: error("SECRET is missing in .env file")
+@Serializable
+data class AccessTokenResponse(
+    val access_token: String,
+    val token_type: String,
+    val expires_in: Int,
+    val scope: String,
+    val created_at: Long,
+    val secret_valid_until: Long
+)
 
-    println("UID: $clientId")
-    println("SECRET $clientSecret")
+fun extractAccessToken(response: String): String {
+    val tokenResponse = Json.decodeFromString<AccessTokenResponse>(response)
+    return tokenResponse.access_token
+}
+
+@OptIn(InternalAPI::class)
+suspend fun fetchAccessToken(): String {
+    // Load your environment variables securely
+    val dotenv = Dotenv.load()
+    val clientId = dotenv["UID"]
+    val clientSecret = dotenv["SECRET"]
+
+    val client = HttpClient()
+
+        try {
+            val response: HttpResponse = client.post("https://api.intra.42.fr/oauth/token") {
+                header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded)
+                body = FormDataContent(Parameters.build {
+                    append("grant_type", "client_credentials")  // Or "authorization_code" depending on your flow
+                    append("client_id", clientId ?: "")
+                    append("client_secret", clientSecret ?: "")
+                })
+            }
+            val responseBody = response.bodyAsText()
+            println("Token Response: $responseBody")
+
+            // Extract access token from response
+            val accessToken = extractAccessToken(responseBody)
+            return accessToken
+        } catch (e: Exception) {
+            println("Error fetching token: ${e.message}")
+            throw e
+        } finally {
+            client.close()
+        }
+}
+
+
+fun main() = runBlocking {
+    try {
+        // Fetch the access token
+        val accessToken = fetchAccessToken()
+        println("Access Token: $accessToken")
+
+    } catch (e: Exception) {
+        println("Error occurred: ${e.message}")
+    }
 }
