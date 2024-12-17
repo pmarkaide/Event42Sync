@@ -24,6 +24,12 @@ dependencies {
 
     // Kotlinx Serialization for JSON handling
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
+
+    // google
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.30.1")
+
+    //SLF4 error fix
+    implementation("org.slf4j:slf4j-nop:2.0.6")
 }
 
 application {

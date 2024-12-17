@@ -8,6 +8,8 @@ import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.util.*
+import com.google.auth.oauth2.ServiceAccountCredentials
+import java.io.FileInputStream
 
 @Serializable
 data class AccessTokenResponse(
@@ -56,48 +58,18 @@ suspend fun fetch42AccessToken(): String {
         }
 }
 
+fun fetchGCAccessToken(): String {
+    val pathToKeyFile = "event42sync.json"
 
-@Serializable
-data class TokenResponse(
-    val accessToken: String,
-    val expiresIn: Long,
-    val tokenType: String
-)
+    val credentials = ServiceAccountCredentials
+        .fromStream(FileInputStream(pathToKeyFile))
+        .createScoped(listOf(
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events"))
 
-@OptIn(InternalAPI::class)
-suspend fun fetchGCAccessToken(): String {
-    // Load your environment variables securely
-    val dotenv = Dotenv.load()
-    val clientId = dotenv["client_id"]
-    val clientSecret = dotenv["client_secret"]
-    val refreshToken = dotenv["refresh_token"]
-
-    val client = HttpClient()
-
-    try {
-        val response: HttpResponse = client.post("https://oauth2.googleapis.com/token") {
-            header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded)
-            body = FormDataContent(Parameters.build {
-                append("client_id", clientId ?: "")
-                append("client_secret", clientSecret ?: "")
-                append("refresh_token", refreshToken ?: "")
-                append("grant_type", "refresh_token")
-            })
-        }
-        val responseBody = response.bodyAsText()
-        println("GC Token Response: $responseBody")
-
-        // Extract access token from response
-        val accessToken = Json.decodeFromString<TokenResponse>(responseBody)
-        return accessToken.accessToken
-    } catch (e: Exception) {
-        println("GC Error fetching token: ${e.message}")
-        throw e
-    } finally {
-        client.close()
-    }
+    val accessToken = credentials.refreshAccessToken().tokenValue
+    return accessToken
 }
-
 
 fun main() = runBlocking {
     try {
