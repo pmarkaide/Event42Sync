@@ -8,6 +8,8 @@ import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 import io.ktor.client.request.forms.FormDataContent
 import io.ktor.util.*
+import com.google.auth.oauth2.ServiceAccountCredentials
+import java.io.FileInputStream
 
 @Serializable
 data class AccessTokenResponse(
@@ -25,7 +27,7 @@ fun extractAccessToken(response: String): String {
 }
 
 @OptIn(InternalAPI::class)
-suspend fun fetchAccessToken(): String {
+suspend fun fetch42AccessToken(): String {
     // Load your environment variables securely
     val dotenv = Dotenv.load()
     val clientId = dotenv["UID"]
@@ -43,25 +45,40 @@ suspend fun fetchAccessToken(): String {
                 })
             }
             val responseBody = response.bodyAsText()
-            println("Token Response: $responseBody")
+            println("42 Token Response: $responseBody")
 
             // Extract access token from response
             val accessToken = extractAccessToken(responseBody)
             return accessToken
         } catch (e: Exception) {
-            println("Error fetching token: ${e.message}")
+            println(" 42Error fetching token: ${e.message}")
             throw e
         } finally {
             client.close()
         }
 }
 
+fun fetchGCAccessToken(): String {
+    val pathToKeyFile = "event42sync.json"
+
+    val credentials = ServiceAccountCredentials
+        .fromStream(FileInputStream(pathToKeyFile))
+        .createScoped(listOf(
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events"))
+
+    val accessToken = credentials.refreshAccessToken().tokenValue
+    return accessToken
+}
 
 fun main() = runBlocking {
     try {
         // Fetch the access token
-        val accessToken = fetchAccessToken()
-        println("Access Token: $accessToken")
+        val accessToken = fetch42AccessToken()
+        println("42 Access Token: $accessToken")
+
+        val accessGCToken = fetchGCAccessToken()
+        println("GC Access Token: $accessGCToken")
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
