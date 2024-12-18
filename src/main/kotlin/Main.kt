@@ -1,14 +1,14 @@
+import com.google.auth.oauth2.ServiceAccountCredentials
+import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.github.cdimascio.dotenv.Dotenv
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
-import io.ktor.client.request.forms.FormDataContent
 import io.ktor.util.*
-import com.google.auth.oauth2.ServiceAccountCredentials
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.FileInputStream
 
 @Serializable
@@ -74,12 +74,14 @@ fun fetchGCAccessToken(): String {
 fun main() = runBlocking {
     try {
         // Fetch the access token
-        val accessToken = fetch42AccessToken()
-        println("42 Access Token: $accessToken")
+        val access42Token = fetch42AccessToken()
+        println("42 Access Token: $access42Token")
 
         val accessGCToken = fetchGCAccessToken()
         println("GC Access Token: $accessGCToken")
 
+        val campus = fetchCampusData(access42Token)
+        printCampusDetails(campus)
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
     }
