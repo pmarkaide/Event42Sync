@@ -20,41 +20,61 @@ val json = Json {
     ignoreUnknownKeys = true
 }
 
-suspend fun fetchCampusData(access_token: String): Campus {
-    // Initialize Ktor client
+suspend fun fetchAllCampusData(access_token:String): List<Campus> {
     val client = HttpClient(CIO)
+    val allCampuses = mutableListOf<Campus>()
+    var currentPage = 1
+    val pageSize = 30 // Number of results per page
+
     try {
-    // Make GET request to 42 API campus endpoint
-    val response: HttpResponse = client.get("https://api.intra.42.fr/v2/campus") {
-        headers {
-            append(HttpHeaders.Authorization, "Bearer $access_token")
+        while (true) {
+            // Make the GET request to the 42 API with pagination
+            val response: HttpResponse = client.get("https://api.intra.42.fr/v2/campus") {
+                parameter("page[number]", currentPage) // Set page number
+                parameter("page[size]", pageSize) // Set page size
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer $access_token")
+                }
+            }
+
+            // Read response and check for empty body
+            val jsonString = response.bodyAsText()
+            if (jsonString.isEmpty()) {
+                throw Exception("Received empty response from the API")
+            }
+
+            // Parse JSON response as a list of campuses
+            val campusList = json.decodeFromString<List<Campus>>(jsonString)
+
+            // Add campuses to the list
+            allCampuses.addAll(campusList)
+
+            // Check if this page had fewer items than `pageSize`, which means no more pages exist
+            if (campusList.size < pageSize) {
+                println("Last page reached. Stopping pagination.")
+                break
+            }
+
+            // Move to the next page
+            currentPage++
         }
-    }
-
-    // Read response and check for empty body
-    val jsonString = response.bodyAsText()
-    if (jsonString.isEmpty()) {
-        throw Exception("Received empty response from the API")
-    }
-
-    // Parse JSON response, which is an array of campuses
-    val campusList = json.decodeFromString<List<Campus>>(jsonString)
-
-    // We assume there's only one campus in the response, retrieve the first element
-    return campusList.first()
-
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
         throw e
     } finally {
         client.close()
     }
+
+    return allCampuses
 }
 
-fun printCampusDetails(campus: Campus) {
-    println("Campus ID: ${campus.id}")
-    println("Name: ${campus.name}")
-    println("Country: ${campus.country}")
-    println("Users Count: ${campus.users_count}")
-    println("Active: ${campus.active}")
+fun printAllCampuses(campuses: List<Campus>) {
+    println("Total Campuses: ${campuses.size}")
+    campuses.forEach { campus ->
+        println("Campus ID: ${campus.id}, " +
+                "Name: ${campus.name}, " +
+                "Country: ${campus.country}, " +
+                "Users Count: ${campus.users_count}, " +
+                "Active: ${campus.active}")
+    }
 }

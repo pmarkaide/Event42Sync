@@ -80,8 +80,8 @@ fun main() = runBlocking {
         val accessGCToken = fetchGCAccessToken()
         println("GC Access Token: $accessGCToken")
 
-        val campus = fetchCampusData(access42Token)
-        printCampusDetails(campus)
+        val allCampuses = fetchAllCampusData(access42Token)
+        printAllCampuses(allCampuses)
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
     }
