@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.*
 
 
 @Serializable
@@ -159,27 +160,25 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
     return allEvents
 }
 
-fun Event.toGoogleCalendarEvent(): Map<String, Any> {
-    // Timezone hardcoded as Helsinki
+fun Event.toGoogleCalendarEvent(): JsonObject {
     val timeZone = "Europe/Helsinki"
 
-    // Convert beginAt and endAt to proper DateTime format (Google Calendar uses RFC3339)
     val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
     val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
 
-    return mapOf(
-        "summary" to name,
-        "location" to location,
-        "description" to description,
-        "start" to mapOf(
-            "dateTime" to startDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-            "timeZone" to timeZone
-        ),
-        "end" to mapOf(
-            "dateTime" to endDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-            "timeZone" to timeZone
-        ),
-    )
+    return buildJsonObject {
+        put("summary", name)
+        put("location", location)
+        put("description", description)
+        put("start", buildJsonObject {
+            put("dateTime", startDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+            put("timeZone", timeZone)
+        })
+        put("end", buildJsonObject {
+            put("dateTime", endDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+            put("timeZone", timeZone)
+        })
+    }
 }
 
 
