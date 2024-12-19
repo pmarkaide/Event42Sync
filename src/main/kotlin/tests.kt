@@ -16,10 +16,6 @@ data class Campus(
     val active: Boolean
 )
 
-val json = Json {
-    ignoreUnknownKeys = true
-}
-
 suspend fun fetchAllCampusData(access_token:String): List<Campus> {
     val client = HttpClient(CIO)
     val allCampuses = mutableListOf<Campus>()
