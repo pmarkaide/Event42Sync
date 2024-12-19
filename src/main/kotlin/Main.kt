@@ -14,6 +14,8 @@ import kotlinx.serialization.json.Json
 import java.io.FileInputStream
 import kotlinx.coroutines.delay
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 
 @Serializable
@@ -157,6 +159,31 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
     return allEvents
 }
 
+fun Event.toGoogleCalendarEvent(): Map<String, Any> {
+    // Timezone hardcoded as Helsinki
+    val timeZone = "Europe/Helsinki"
+
+    // Convert beginAt and endAt to proper DateTime format (Google Calendar uses RFC3339)
+    val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
+    val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
+
+    return mapOf(
+        "summary" to name,
+        "location" to location,
+        "description" to description,
+        "start" to mapOf(
+            "dateTime" to startDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            "timeZone" to timeZone
+        ),
+        "end" to mapOf(
+            "dateTime" to endDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            "timeZone" to timeZone
+        ),
+    )
+}
+
+
+
 fun main() = runBlocking {
     try {
         // Fetch the access token
@@ -167,10 +194,12 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCToken")
 
         val allEvents = fetchAllCampusEvents(access42Token)
-        allEvents.forEach { event ->
-            println(event.name)
-        }
 
+        // Convert the list of Event objects to Google Calendar event format
+        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
+        googleCalendarEvents.forEach { event ->
+            println(event)
+        }
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
     }
