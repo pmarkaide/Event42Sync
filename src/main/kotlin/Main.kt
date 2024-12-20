@@ -2,6 +2,7 @@ import com.google.auth.oauth2.ServiceAccountCredentials
 import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -17,6 +18,7 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.*
+
 
 
 @Serializable
@@ -181,7 +183,36 @@ fun Event.toGoogleCalendarEvent(): JsonObject {
     }
 }
 
+suspend fun insertCalendarEvents(
+    accessToken: String,
+    events: List<JsonObject>
+) {
+    val dotenv = Dotenv.load()
+    val calendarId = dotenv["calendar_id"]
+    val client = HttpClient(CIO)
 
+    events.forEach { event ->
+        try {
+            val response = client.post("https://www.googleapis.com/calendar/v3/calendars/$calendarId/events") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer $accessToken")
+                    append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                }
+                setBody(event.toString()) // Convert JsonObject to String
+            }
+
+            // Handle response
+            if (response.status.isSuccess()) {
+                println("Successfully created event: ${event["summary"]}")
+            } else {
+                println("Failed to create event: ${response.status}")
+            }
+        } catch (e: Exception) {
+            println("Error creating event ${event["summary"]}: ${e.message}")
+        }
+    }
+    client.close() // Don't forget to close the client
+}
 
 fun main() = runBlocking {
     try {
@@ -192,13 +223,16 @@ fun main() = runBlocking {
         val accessGCToken = fetchGCAccessToken()
         println("GC Access Token: $accessGCToken")
 
+        println("Fetching 42 events...")
         val allEvents = fetchAllCampusEvents(access42Token)
 
         // Convert the list of Event objects to Google Calendar event format
         val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
-        googleCalendarEvents.forEach { event ->
-            println(event)
-        }
+
+        println("Uploading events to Gcal...")
+        insertCalendarEvents(accessGCToken, googleCalendarEvents)
+
+
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
     }
