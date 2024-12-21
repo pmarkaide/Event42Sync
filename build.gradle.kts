@@ -15,6 +15,8 @@ dependencies {
     implementation("io.ktor:ktor-client-core:2.3.0")
     implementation("io.ktor:ktor-client-cio:2.3.0")
     implementation("io.ktor:ktor-client-serialization:2.3.0")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.0")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.0")
 
     // Dotenv for environment variable management
     implementation("io.github.cdimascio:dotenv-kotlin:6.4.2")
@@ -30,6 +32,8 @@ dependencies {
 
     //SLF4 error fix
     implementation("org.slf4j:slf4j-nop:2.0.6")
+
+
 }
 
 application {
