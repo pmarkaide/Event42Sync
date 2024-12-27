@@ -4,7 +4,12 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.*
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /////////////// GET campus summary ///////////////
 
@@ -116,5 +121,96 @@ suspend fun deleteAllEvents(accessToken: String) {
         println("Error occurred: ${e.message}")
     } finally {
         client.close()
+    }
+}
+
+
+suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
+    val client = HttpClient(CIO)
+    val allEvents = mutableListOf<Event>()
+    var currentPage = 1
+    val pageSize = 1 // Number of results per page
+    val zone = ZoneId.systemDefault() // Get system default time zone
+    // set current time as yesterday at midnight
+    // value is relative to UTC. Modify by timezones as needed
+    val currentTime = LocalDate.now(zone)
+        .minusDays(30) // Move to the previous day (yesterday)
+        .atStartOfDay(zone) // Set to midnight of the previous day
+        .toInstant()
+    var stopPagination = false
+
+    try {
+        while (true) {
+            // Make the GET request to the 42 API with pagination
+            val response: HttpResponse = client.get("https://api.intra.42.fr/v2/campus/13/events") {
+                parameter("page[number]", currentPage) // Set page number
+                parameter("page[size]", pageSize) // Set page size
+                parameter("[sort]", "-begin_at")
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer $access_token")
+                }
+            }
+
+            // Read response and check for empty body
+            val jsonString = response.bodyAsText()
+            if (jsonString.isEmpty()) {
+                throw Exception("Received empty response from the API")
+            }
+
+            // Parse JSON response as a list of campuses
+            val eventList = json.decodeFromString<List<Event>>(jsonString)
+
+            // Add campuses to the list
+            allEvents.addAll(eventList)
+
+            // Check each event's begin_at and compare with current time
+            for (event in eventList) {
+                val eventBeginAt = Instant.parse(event.beginAt) // Parse begin_at as Instant
+                if (eventBeginAt.isAfter(currentTime)) {
+                    continue
+                } else {
+                    stopPagination = true;
+                    break
+                }
+            }
+
+            // Check if this page had fewer items than `pageSize`, which means no more pages exist
+            if (eventList.size < pageSize || stopPagination) {
+                println("Last page reached or events are older than today. Stopping pagination.")
+                break
+            }
+            delay(2000)
+            // Move to the next page
+            currentPage++
+        }
+    } catch (e: Exception) {
+        println("Error occurred: ${e.message}")
+        throw e
+    } finally {
+        client.close()
+    }
+
+    //Append ID to the description to use them as primary key when comparing events
+    val modifiedEvents = allEvents.map { event ->
+        event.copy(description = "${event.description}\n\nID: ${event.id}")
+    }
+    return modifiedEvents
+}
+
+fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
+    try {
+        println("Deleting all calendar events...")
+        deleteAllEvents(accessGCtoken)
+
+        println("Fetching 42 events...")
+        val allEvents =fetchAllCampusEvents(access42token)
+        println("Total events fetched: ${allEvents.size}")
+
+        println("Uploading events to Gcal...")
+        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
+        insertCalendarEvents(accessGCtoken, googleCalendarEvents)
+    }
+    catch (e: Exception) {
+        println("Error occurred: ${e.message}")
     }
 }

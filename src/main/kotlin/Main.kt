@@ -18,7 +18,8 @@ import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.*
-
+import java.time.LocalDate
+import java.time.ZoneId
 
 
 @Serializable
@@ -100,12 +101,18 @@ val json = Json {
     ignoreUnknownKeys = true
 }
 
-suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
+suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
     val client = HttpClient(CIO)
     val allEvents = mutableListOf<Event>()
     var currentPage = 1
     val pageSize = 1 // Number of results per page
-    val currentTime = Instant.now()
+    val zone = ZoneId.systemDefault() // Get system default time zone
+    // set current time as yesterday at midnight
+    // value is relative to UTC. Modify by timezones as needed
+    val currentTime = LocalDate.now(zone)
+        .minusDays(1) // Move to the previous day (yesterday)
+        .atStartOfDay(zone) // Set to midnight of the previous day
+        .toInstant()
     var stopPagination = false
 
     try {
@@ -114,7 +121,7 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
             val response: HttpResponse = client.get("https://api.intra.42.fr/v2/campus/13/events") {
                 parameter("page[number]", currentPage) // Set page number
                 parameter("page[size]", pageSize) // Set page size
-                parameter("[sort]", "-begin_at")
+                parameter("[sort]", "-updated_at")
                 headers {
                     append(HttpHeaders.Authorization, "Bearer $access_token")
                 }
@@ -126,15 +133,15 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
                 throw Exception("Received empty response from the API")
             }
 
-            // Parse JSON response as a list of campuses
+            // Parse JSON response as a list of events
             val eventList = json.decodeFromString<List<Event>>(jsonString)
 
-            // Add campuses to the list
+            // Add events to the total list
             allEvents.addAll(eventList)
 
-            // Check each event's begin_at and compare with current time
+            // Check each event's updated_at and compare with current time
             for (event in eventList) {
-                val eventBeginAt = Instant.parse(event.beginAt) // Parse begin_at as Instant
+                val eventBeginAt = Instant.parse(event.updatedAt)
                 if (eventBeginAt.isAfter(currentTime)) {
                     continue
                 } else {
@@ -215,27 +222,26 @@ suspend fun insertCalendarEvents(
             println("Error creating event ${event["summary"]}: ${e.message}")
         }
     }
-    client.close() // Don't forget to close the client
+    client.close()
 }
 
 fun main() = runBlocking {
     try {
-        // Fetch the access token
+        // Fetch the access tokens
         val access42Token = fetch42AccessToken()
         println("42 Access Token: $access42Token")
-
         val accessGCToken = fetchGCAccessToken()
         println("GC Access Token: $accessGCToken")
 
+        // init_calendar
+        //initCalendar(accessGCToken, access42Token)
         println("Fetching 42 events...")
-        val allEvents = fetchAllCampusEvents(access42Token)
-        // Convert the list of Event objects to Google Calendar event format
-        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
+        val allEvents = fetchUpdatedCampusEvents(access42Token)
+        println("Total events fetched: ${allEvents.size}")
 
         println("Uploading events to Gcal...")
-        // Delete all events in GCal in case of modified logic
-        //println("Deleting Gcal events...")
-        //deleteAllEvents(accessGCToken)
+        // Convert the list of Event objects to Google Calendar event format
+        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
         insertCalendarEvents(accessGCToken, googleCalendarEvents)
 
     } catch (e: Exception) {
