@@ -105,7 +105,7 @@ suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
     val client = HttpClient(CIO)
     val allEvents = mutableListOf<Event>()
     var currentPage = 1
-    val pageSize = 1 // Number of results per page
+    val pageSize = 30 // Number of results per page
     val zone = ZoneId.systemDefault() // Get system default time zone
     // set current time as yesterday at midnight
     // value is relative to UTC. Modify by timezones as needed
@@ -166,8 +166,14 @@ suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
         client.close()
     }
 
+    // Filter out events older than the threshold time
+    val filteredEvents = allEvents.filter { event ->
+        val eventBeginAt = Instant.parse(event.updatedAt) // Parse begin_at as Instant
+        eventBeginAt.isAfter(currentTime) // Keep only events that are after the threshold
+    }
+
     //Append ID to the description to use them as primary key when comparing events
-    val modifiedEvents = allEvents.map { event ->
+    val modifiedEvents = filteredEvents.map { event ->
         event.copy(description = "${event.description}\n\nID: ${event.id}")
     }
     return modifiedEvents
