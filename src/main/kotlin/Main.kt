@@ -159,7 +159,11 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
         client.close()
     }
 
-    return allEvents
+    //Append ID to the description to use them as primary key when comparing events
+    val modifiedEvents = allEvents.map { event ->
+        event.copy(description = "${event.description}\n\nID: ${event.id}")
+    }
+    return modifiedEvents
 }
 
 fun Event.toGoogleCalendarEvent(): JsonObject {
@@ -225,13 +229,14 @@ fun main() = runBlocking {
 
         println("Fetching 42 events...")
         val allEvents = fetchAllCampusEvents(access42Token)
-
         // Convert the list of Event objects to Google Calendar event format
         val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
 
         println("Uploading events to Gcal...")
+        // Delete all events in GCal in case of modified logic
+        //println("Deleting Gcal events...")
+        //deleteAllEvents(accessGCToken)
         insertCalendarEvents(accessGCToken, googleCalendarEvents)
-
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
