@@ -7,18 +7,18 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.util.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.FileInputStream
-import kotlinx.coroutines.delay
-import kotlinx.serialization.encodeToString
 import java.time.Instant
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 
 @Serializable
@@ -45,27 +45,27 @@ suspend fun fetch42AccessToken(): String {
 
     val client = HttpClient()
 
-        try {
-            val response: HttpResponse = client.post("https://api.intra.42.fr/oauth/token") {
-                header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded)
-                body = FormDataContent(Parameters.build {
-                    append("grant_type", "client_credentials")  // Or "authorization_code" depending on your flow
-                    append("client_id", clientId ?: "")
-                    append("client_secret", clientSecret ?: "")
-                })
-            }
-            val responseBody = response.bodyAsText()
-            println("42 Token Response: $responseBody")
-            delay(2000)
-            // Extract access token from response
-            val accessToken = extractAccessToken(responseBody)
-            return accessToken
-        } catch (e: Exception) {
-            println(" 42Error fetching token: ${e.message}")
-            throw e
-        } finally {
-            client.close()
+    try {
+        val response: HttpResponse = client.post("https://api.intra.42.fr/oauth/token") {
+            header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded)
+            body = FormDataContent(Parameters.build {
+                append("grant_type", "client_credentials")  // Or "authorization_code" depending on your flow
+                append("client_id", clientId ?: "")
+                append("client_secret", clientSecret ?: "")
+            })
         }
+        val responseBody = response.bodyAsText()
+        println("42 Token Response: $responseBody")
+        delay(2000)
+        // Extract access token from response
+        val accessToken = extractAccessToken(responseBody)
+        return accessToken
+    } catch (e: Exception) {
+        println(" 42Error fetching token: ${e.message}")
+        throw e
+    } finally {
+        client.close()
+    }
 }
 
 fun fetchGCAccessToken(): String {
@@ -73,9 +73,12 @@ fun fetchGCAccessToken(): String {
 
     val credentials = ServiceAccountCredentials
         .fromStream(FileInputStream(pathToKeyFile))
-        .createScoped(listOf(
-            "https://www.googleapis.com/auth/calendar",
-            "https://www.googleapis.com/auth/calendar.events"))
+        .createScoped(
+            listOf(
+                "https://www.googleapis.com/auth/calendar",
+                "https://www.googleapis.com/auth/calendar.events"
+            )
+        )
 
     val accessToken = credentials.refreshAccessToken().tokenValue
     return accessToken
@@ -100,7 +103,76 @@ val json = Json {
     ignoreUnknownKeys = true
 }
 
-suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
+@Serializable
+data class DateTimeInfo(
+    val dateTime: String,
+    val timeZone: String
+)
+
+@Serializable
+data class GCalEvent(
+    val id: String?,
+    val created: String?,
+    val updated: String?,
+    val summary: String,
+    val description: String,
+    val location: String,
+    val start: DateTimeInfo,
+    val end: DateTimeInfo
+)
+
+@Serializable
+data class GCalEventsResponse(
+    val items: List<GCalEvent> = emptyList() // List of events
+)
+
+suspend fun getGcalEvents(accessToken: String): List<GCalEvent> {
+    val client = HttpClient(CIO)
+
+    val dotenv = Dotenv.load()
+    val calendarID = dotenv["calendar_id"]
+
+    val zone = ZoneId.systemDefault() // Get system default time zone
+    val currentTime = LocalDate.now(zone)
+        .minusDays(1) // Move to the previous day (yesterday)
+        .atStartOfDay(zone) // Set to midnight of the previous day
+        .toInstant()
+    // Format the current time in ISO 8601 format (UTC timezone) for the API
+    val formatter = DateTimeFormatter.ISO_INSTANT
+    val formattedTime = formatter.format(currentTime)
+    println(formattedTime)
+    try {
+        val response: HttpResponse = client.get(
+            "https://www.googleapis.com/calendar/v3/calendars/$calendarID/" +
+                    "events?singleEvents=true&timeMin=2024-12-26T22:00:00Z"
+        ) {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        // Check if the response was successful
+        if (!response.status.isSuccess()) {
+            throw Exception("Failed to fetch events: ${response.status}")
+        }
+        println(response.bodyAsText())
+        val jsonString = response.bodyAsText()
+        if (jsonString.isEmpty()) {
+            println("No events found for the given time range.")
+            return emptyList() // Return empty list if no events found
+        }
+
+        // Deserialize the response JSON to a list of GCalEvent objects
+        val responseWrapper = json.decodeFromString<GCalEventsResponse>(jsonString)
+        return responseWrapper.items
+    } catch (e: Exception) {
+        println("Error occurred: ${e.message}")
+        return emptyList() // Return empty list in case of error
+    } finally {
+        client.close()
+    }
+}
+
+
+suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event> {
     val client = HttpClient(CIO)
     val allEvents = mutableListOf<Event>()
     var currentPage = 1
@@ -178,24 +250,6 @@ suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
     return modifiedEvents
 }
 
-@Serializable
-data class DateTimeInfo(
-    val dateTime: String,
-    val timeZone: String
-)
-
-@Serializable
-data class GCalEvent(
-    val id: Int?,
-    val created: String?,
-    val updated: String?,
-    val summary: String,
-    val description: String,
-    val location: String,
-    val start: DateTimeInfo,
-    val end: DateTimeInfo
-)
-
 fun Event.toGCalEvent(): GCalEvent {
     val timeZone = "Europe/Helsinki"
 
@@ -203,9 +257,9 @@ fun Event.toGCalEvent(): GCalEvent {
     val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
 
     return GCalEvent(
-        id = this.id,
+        id = this.id.toString(),
         created = this.createdAt,
-        updated= this.updatedAt,
+        updated = this.updatedAt,
         location = this.location,
         summary = this.name,
         description = this.description,
@@ -266,7 +320,7 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        initCalendar(accessGCtoken, access42Token)
+        //initCalendar(accessGCtoken, access42Token)
 //        println("Fetching 42 events...")
 //        val allEvents = fetchUpdatedCampusEvents(access42Token)
 //        println("Total events fetched: ${allEvents.size}")
@@ -277,6 +331,8 @@ fun main() = runBlocking {
 //            it.toGCalEvent().toUploadEvent()
 //        }
 //        insertCalendarEvents(accessGCtoken, uploadEvents)
+        val GcalEvents = getGcalEvents(accessGCtoken)
+
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")

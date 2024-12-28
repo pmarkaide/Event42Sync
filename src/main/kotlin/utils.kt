@@ -211,17 +211,17 @@ fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
         println("Deleting all calendar events...")
         deleteAllEvents(accessGCtoken)
 
-//        println("Fetching 42 events...")
-//        val allEvents = fetchAllCampusEvents(access42token)
-//        println("Total events fetched: ${allEvents.size}")
-//
-//        println("Uploading events to Gcal...")
-//        val uploadEvents = allEvents.map {
-//            it.toGCalEvent()
-//        }
-//        val jsonEvent = Json.encodeToString(uploadEvents.first())
-//        println(jsonEvent)
-        //insertCalendarEvents(accessGCtoken, uploadEvents)
+        println("Fetching 42 events...")
+        val allEvents = fetchAllCampusEvents(access42token)
+        println("Total events fetched: ${allEvents.size}")
+
+        println("Uploading events to Gcal...")
+        val uploadEvents = allEvents.map {
+            it.toGCalEvent()
+        }
+        val jsonEvent = Json.encodeToString(uploadEvents.first())
+        println(jsonEvent)
+        insertCalendarEvents(accessGCtoken, uploadEvents)
     }
     catch (e: Exception) {
         println("Error occurred: ${e.message}")
