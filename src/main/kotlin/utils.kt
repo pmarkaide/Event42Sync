@@ -7,7 +7,8 @@ import io.ktor.http.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.*
-import kotlinx.serialization.json.Json
+import java.sql.Connection
+import java.sql.DriverManager
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -128,9 +129,9 @@ suspend fun deleteAllEvents(accessToken: String) {
 }
 
 
-suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
+suspend fun fetchAllCampusEvents(access_token:String): List<`Event42`> {
     val client = HttpClient(CIO)
-    val allEvents = mutableListOf<Event>()
+    val allEvent42s = mutableListOf<`Event42`>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
     val zone = ZoneId.systemDefault() // Get system default time zone
@@ -161,13 +162,13 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
             }
 
             // Parse JSON response as a list of campuses
-            val eventList = json.decodeFromString<List<Event>>(jsonString)
+            val Event42List = json.decodeFromString<List<`Event42`>>(jsonString)
 
             // Add campuses to the list
-            allEvents.addAll(eventList)
+            allEvent42s.addAll(Event42List)
 
             // Check each event's begin_at and compare with current time
-            for (event in eventList) {
+            for (event in Event42List) {
                 val eventBeginAt = Instant.parse(event.beginAt) // Parse begin_at as Instant
                 if (eventBeginAt.isAfter(currentTime)) {
                     continue
@@ -178,7 +179,7 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
             }
 
             // Check if this page had fewer items than `pageSize`, which means no more pages exist
-            if (eventList.size < pageSize || stopPagination) {
+            if (Event42List.size < pageSize || stopPagination) {
                 println("Last page reached or events are older than today. Stopping pagination.")
                 break
             }
@@ -194,7 +195,7 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
     }
 
     // Filter out events older than the threshold time
-    val filteredEvents = allEvents.filter { event ->
+    val filteredEvents = allEvent42s.filter { event ->
         val eventBeginAt = Instant.parse(event.beginAt) // Parse begin_at as Instant
         eventBeginAt.isAfter(currentTime) // Keep only events that are after the threshold
     }
@@ -206,6 +207,26 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event> {
     return modifiedEvents
 }
 
+// Connect to SQLite database
+fun getDatabaseConnection(): Connection {
+    val url = "jdbc:sqlite:events.db"
+    return DriverManager.getConnection(url)
+}
+
+// Create the schema
+fun createSchema(connection: Connection) {
+    val statement = connection.createStatement()
+    statement.execute(
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            id TEXT PRIMARY KEY,
+            gcal_event_id TEXT,
+            last_updated TEXT
+        )
+        """
+    )
+}
+
 fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
     try {
         println("Deleting all calendar events...")
@@ -215,13 +236,16 @@ fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
         val allEvents = fetchAllCampusEvents(access42token)
         println("Total events fetched: ${allEvents.size}")
 
-        println("Uploading events to Gcal...")
-        val uploadEvents = allEvents.map {
-            it.toGCalEvent()
+        println("Initializing SQLite database...")
+        val connection = getDatabaseConnection()
+        createSchema(connection)
+
+        println("Uploading events to GCal...")
+        for (event in allEvents) {
+            val eventGCalID = createGCalEvent(accessGCtoken, event) // POST to Google Calendar
+            upsertEvent(connection, event.id, eventGCalID, event.updatedAt) // Insert into SQLite
         }
-        val jsonEvent = Json.encodeToString(uploadEvents.first())
-        println(jsonEvent)
-        insertCalendarEvents(accessGCtoken, uploadEvents)
+        //insertCalendarEvents(accessGCtoken, uploadEvents)
     }
     catch (e: Exception) {
         println("Error occurred: ${e.message}")
