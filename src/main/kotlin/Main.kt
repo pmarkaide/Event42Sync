@@ -2,7 +2,6 @@ import com.google.auth.oauth2.ServiceAccountCredentials
 import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -14,10 +13,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.json.Json
 import java.io.FileInputStream
 import kotlinx.coroutines.delay
+import kotlinx.serialization.encodeToString
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import kotlinx.serialization.json.*
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -179,53 +178,80 @@ suspend fun fetchUpdatedCampusEvents(access_token:String): List<Event> {
     return modifiedEvents
 }
 
-fun Event.toGoogleCalendarEvent(): JsonObject {
+@Serializable
+data class DateTimeInfo(
+    val dateTime: String,
+    val timeZone: String
+)
+
+@Serializable
+data class GCalEvent(
+    val id: Int?,
+    val created: String?,
+    val updated: String?,
+    val summary: String,
+    val description: String,
+    val location: String,
+    val start: DateTimeInfo,
+    val end: DateTimeInfo
+)
+
+fun Event.toGCalEvent(): GCalEvent {
     val timeZone = "Europe/Helsinki"
 
     val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
     val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
 
-    return buildJsonObject {
-        put("summary", name)
-        put("location", location)
-        put("description", description)
-        put("start", buildJsonObject {
-            put("dateTime", startDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-            put("timeZone", timeZone)
-        })
-        put("end", buildJsonObject {
-            put("dateTime", endDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-            put("timeZone", timeZone)
-        })
-    }
+    return GCalEvent(
+        id = this.id,
+        created = this.createdAt,
+        updated= this.updatedAt,
+        location = this.location,
+        summary = this.name,
+        description = this.description,
+        start = DateTimeInfo(
+            dateTime = startDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            timeZone = timeZone
+        ),
+        end = DateTimeInfo(
+            dateTime = endDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            timeZone = timeZone
+        )
+    )
+}
+
+fun GCalEvent.toUploadEvent(): GCalEvent {
+    return this.copy(id = null, created = null, updated = null)
 }
 
 suspend fun insertCalendarEvents(
     accessToken: String,
-    events: List<JsonObject>
+    events: List<GCalEvent>
 ) {
     val dotenv = Dotenv.load()
     val calendarId = dotenv["calendar_id"]
     val client = HttpClient(CIO)
-
     events.forEach { event ->
         try {
+            val uploadEvent = event.toUploadEvent() // Nullify non-required fields
+            val eventJson = json.encodeToString(uploadEvent) // Serialize event to JSON
+
             val response = client.post("https://www.googleapis.com/calendar/v3/calendars/$calendarId/events") {
                 headers {
                     append(HttpHeaders.Authorization, "Bearer $accessToken")
                     append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
                 }
-                setBody(event.toString()) // Convert JsonObject to String
+                setBody(eventJson) // Convert JsonObject to String
             }
 
             // Handle response
             if (response.status.isSuccess()) {
-                println("Successfully created event: ${event["summary"]}")
+                println("Successfully created event: ${event.summary}")
             } else {
                 println("Failed to create event: ${response.status}")
             }
         } catch (e: Exception) {
-            println("Error creating event ${event["summary"]}: ${e.message}")
+            println("Error creating event ${event.summary}: ${e.message}")
         }
     }
     client.close()
@@ -236,19 +262,21 @@ fun main() = runBlocking {
         // Fetch the access tokens
         val access42Token = fetch42AccessToken()
         println("42 Access Token: $access42Token")
-        val accessGCToken = fetchGCAccessToken()
-        println("GC Access Token: $accessGCToken")
+        val accessGCtoken = fetchGCAccessToken()
+        println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        //initCalendar(accessGCToken, access42Token)
-        println("Fetching 42 events...")
-        val allEvents = fetchUpdatedCampusEvents(access42Token)
-        println("Total events fetched: ${allEvents.size}")
-
-        println("Uploading events to Gcal...")
-        // Convert the list of Event objects to Google Calendar event format
-        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
-        insertCalendarEvents(accessGCToken, googleCalendarEvents)
+        initCalendar(accessGCtoken, access42Token)
+//        println("Fetching 42 events...")
+//        val allEvents = fetchUpdatedCampusEvents(access42Token)
+//        println("Total events fetched: ${allEvents.size}")
+//
+//        println("Uploading events to Gcal...")
+//        // Convert the list of Event objects to Google Calendar event format
+//        val uploadEvents = allEvents.map {
+//            it.toGCalEvent().toUploadEvent()
+//        }
+//        insertCalendarEvents(accessGCtoken, uploadEvents)
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")

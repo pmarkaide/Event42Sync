@@ -7,6 +7,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.*
+import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -99,7 +100,8 @@ suspend fun deleteAllEvents(accessToken: String) {
     val calendarID = dotenv["calendar_id"]
     try {
         // Step 1: Fetch events
-        val response: HttpResponse = client.get("https://www.googleapis.com/calendar/v3/calendars/$calendarID/events") {
+        val response: HttpResponse = client.get("https://www.googleapis.com/calendar/v3/calendars/$calendarID/" +
+                "events?singleEvents=true") {
             header(HttpHeaders.Authorization, "Bearer $accessToken")
         }
 
@@ -111,6 +113,7 @@ suspend fun deleteAllEvents(accessToken: String) {
 
         // Step 2: Delete each event
         eventList.items.forEach { event ->
+            println("Deleting ${event.id}...")
             client.delete("https://www.googleapis.com/calendar/v3/calendars/$calendarID/events/${event.id}") {
                 header(HttpHeaders.Authorization, "Bearer $accessToken")
             }
@@ -208,13 +211,17 @@ fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
         println("Deleting all calendar events...")
         deleteAllEvents(accessGCtoken)
 
-        println("Fetching 42 events...")
-        val allEvents =fetchAllCampusEvents(access42token)
-        println("Total events fetched: ${allEvents.size}")
-
-        println("Uploading events to Gcal...")
-        val googleCalendarEvents = allEvents.map { it.toGoogleCalendarEvent() }
-        insertCalendarEvents(accessGCtoken, googleCalendarEvents)
+//        println("Fetching 42 events...")
+//        val allEvents = fetchAllCampusEvents(access42token)
+//        println("Total events fetched: ${allEvents.size}")
+//
+//        println("Uploading events to Gcal...")
+//        val uploadEvents = allEvents.map {
+//            it.toGCalEvent()
+//        }
+//        val jsonEvent = Json.encodeToString(uploadEvents.first())
+//        println(jsonEvent)
+        //insertCalendarEvents(accessGCtoken, uploadEvents)
     }
     catch (e: Exception) {
         println("Error occurred: ${e.message}")
