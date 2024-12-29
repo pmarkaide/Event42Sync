@@ -32,8 +32,10 @@ dependencies {
 
     //SLF4 error fix
     implementation("org.slf4j:slf4j-nop:2.0.6")
+    implementation("io.ktor:ktor-client-cio-jvm:2.3.0")
 
-
+    // SQLlite
+    implementation("org.xerial:sqlite-jdbc:3.44.1.0")
 }
 
 application {
