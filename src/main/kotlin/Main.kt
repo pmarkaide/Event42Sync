@@ -304,7 +304,7 @@ suspend fun createGCalEvent(
         if (response.status.isSuccess()) {
             val responseBody = response.bodyAsText()
             val createdEvent = json.decodeFromString<EventGCal>(responseBody)
-            println("Successfully POST event: ${event.name}")
+            println("POST 42 ${event.name}")
             return createdEvent.id
         } else {
             println("Failed to POST event: ${response.status}")

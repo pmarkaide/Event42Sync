@@ -115,7 +115,7 @@ suspend fun deleteAllEvents(accessToken: String) {
 
         // Step 2: Delete each event
         eventList.items.forEach { event ->
-            println("Deleting ${event.id}...")
+            println("DELETE GCal ${event.id}")
             client.delete("https://www.googleapis.com/calendar/v3/calendars/$calendarID/events/${event.id}") {
                 header(HttpHeaders.Authorization, "Bearer $accessToken")
             }
@@ -219,6 +219,8 @@ object DatabaseConfig {
     object Columns {
         const val ID = "id"
         const val GCAL_EVENT_ID = "gcal_event_id"
+        const val TITLE = "title"
+        const val BEGIN_AT ="begin_at"
         const val LAST_UPDATED = "last_updated"
     }
 }
@@ -250,6 +252,8 @@ class DatabaseManager private constructor() {
                 CREATE TABLE IF NOT EXISTS ${DatabaseConfig.Tables.EVENTS} (
                     ${DatabaseConfig.Columns.ID} INTEGER PRIMARY KEY,
                     ${DatabaseConfig.Columns.GCAL_EVENT_ID} TEXT,
+                    ${DatabaseConfig.Columns.TITLE} TEXT,
+                    ${DatabaseConfig.Columns.BEGIN_AT} TEXT,
                     ${DatabaseConfig.Columns.LAST_UPDATED} TEXT
                 )
             """)
@@ -264,21 +268,27 @@ class DatabaseManager private constructor() {
         }
     }
 
-    fun upsertEvent(id: Int, gcalEventId: String?, lastUpdated: String) {
+    fun upsertEvent(id: Int, gcalEventId: String?, title: String, beginAt: String, lastUpdated: String) {
         getConnection().prepareStatement("""
             INSERT INTO ${DatabaseConfig.Tables.EVENTS} (
                 ${DatabaseConfig.Columns.ID}, 
                 ${DatabaseConfig.Columns.GCAL_EVENT_ID}, 
+                ${DatabaseConfig.Columns.TITLE},
+                ${DatabaseConfig.Columns.BEGIN_AT}, 
                 ${DatabaseConfig.Columns.LAST_UPDATED}
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(${DatabaseConfig.Columns.ID}) DO UPDATE SET
                 ${DatabaseConfig.Columns.GCAL_EVENT_ID} = excluded.${DatabaseConfig.Columns.GCAL_EVENT_ID},
+                ${DatabaseConfig.Columns.TITLE} = excluded.${DatabaseConfig.Columns.TITLE},
+                ${DatabaseConfig.Columns.BEGIN_AT} = excluded.${DatabaseConfig.Columns.BEGIN_AT},
                 ${DatabaseConfig.Columns.LAST_UPDATED} = excluded.${DatabaseConfig.Columns.LAST_UPDATED}
         """).use { stmt ->
             stmt.setInt(1, id)
             stmt.setString(2, gcalEventId)
-            stmt.setString(3, lastUpdated)
+            stmt.setString(3, title)
+            stmt.setString(4, beginAt)
+            stmt.setString(5, lastUpdated)
             stmt.executeUpdate()
         }
     }
@@ -322,7 +332,7 @@ fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
             for (event in allEvents) {
                 val eventGCalID = createGCalEvent(accessGCtoken, event)
                 try {
-                    dbManager.upsertEvent(event.id, eventGCalID, event.updatedAt)
+                    dbManager.upsertEvent(event.id, eventGCalID, event.name, event.beginAt, event.updatedAt)
                 } catch (e: Exception) {
                     println("Failed to save event ${event.id} to database: ${e.message}")
                     break
