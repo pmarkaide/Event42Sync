@@ -174,9 +174,9 @@ suspend fun getGcalEvents(accessToken: String): List<EventGCal> {
 }
 
 
-suspend fun fetchUpdatedCampusEvents(access_token: String): List<`Event42`> {
+suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
     val client = HttpClient(CIO)
-    val allEvent42s = mutableListOf<`Event42`>()
+    val allEvent42s = mutableListOf<Event42>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
     val zone = ZoneId.systemDefault() // Get system default time zone
@@ -207,7 +207,7 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<`Event42`> {
             }
 
             // Parse JSON response as a list of events
-            val Event42List = json.decodeFromString<List<`Event42`>>(jsonString)
+            val Event42List = json.decodeFromString<List<Event42>>(jsonString)
 
             // Add events to the total list
             allEvent42s.addAll(Event42List)
@@ -252,7 +252,7 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<`Event42`> {
     return modifiedEvents
 }
 
-fun `Event42`.toGCalEvent(): EventGCal {
+fun Event42.toGCalEvent(): EventGCal {
     val timeZone = "Europe/Helsinki"
 
     val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
@@ -304,79 +304,18 @@ suspend fun createGCalEvent(
         if (response.status.isSuccess()) {
             val responseBody = response.bodyAsText()
             val createdEvent = json.decodeFromString<EventGCal>(responseBody)
-            println("Successfully created event: ${event.summary}")
+            println("Successfully POST event: ${event.name}")
             return createdEvent.id
         } else {
-            println("Failed to create event: ${response.status}")
+            println("Failed to POST event: ${response.status}")
             return null
         }
     } catch (e: Exception) {
-        println("Error creating event ${event.summary}: ${e.message}")
+        println("Error to POST event ${event.name}: ${e.message}")
         return null
     } finally {
         client.close()
     }
-}
-suspend fun insertCalendarEvents(
-    accessToken: String,
-    events: List<EventGCal>
-) {
-    val dotenv = Dotenv.load()
-    val calendarId = dotenv["calendar_id"]
-    val client = HttpClient(CIO)
-    events.forEach { event ->
-        try {
-            val uploadEvent = event.toUploadEvent() // Nullify non-required fields
-            val eventJson = json.encodeToString(uploadEvent) // Serialize event to JSON
-
-            val response = client.post("https://www.googleapis.com/calendar/v3/calendars/$calendarId/events") {
-                headers {
-                    append(HttpHeaders.Authorization, "Bearer $accessToken")
-                    append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                }
-                setBody(eventJson) // Convert JsonObject to String
-            }
-
-            // Handle response
-            if (response.status.isSuccess()) {
-                println("Successfully created event: ${event.summary}")
-            } else {
-                println("Failed to create event: ${response.status}")
-            }
-        } catch (e: Exception) {
-            println("Error creating event ${event.summary}: ${e.message}")
-        }
-    }
-    client.close()
-}
-
-
-
-// Insert or update events
-fun upsertEvent(connection: Connection, id: Int, gcalEventId: String?, lastUpdated: String) {
-    val query = """
-        INSERT INTO events (id, gcal_event_id, last_updated)
-        VALUES (?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            gcal_event_id = excluded.gcal_event_id,
-            last_updated = excluded.last_updated
-    """
-    val preparedStatement = connection.prepareStatement(query)
-    preparedStatement.setString(1, id)
-    preparedStatement.setString(2, gcalEventId)
-    preparedStatement.setLong(3, lastUpdated)
-    preparedStatement.executeUpdate()
-}
-
-// Fetch all events from SQLite
-fun fetchEvents(connection: Connection): List<Pair<String, String?>> {
-    val query = "SELECT id, gcal_event_id FROM events"
-    val resultSet: ResultSet = connection.createStatement().executeQuery(query)
-    val events = mutableListOf<Pair<String, String?>>()
-    while (resultSet.next()) {
-        events.add(resultSet.getString("id") to resultSet.getString("gcal_event_id"))
-    }
-    return events
 }
 
 fun main() = runBlocking {
@@ -388,7 +327,7 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        //initCalendar(accessGCtoken, access42Token)
+        initCalendar(accessGCtoken, access42Token)
 //        println("Fetching 42 events...")
 //        val allEvents = fetchUpdatedCampusEvents(access42Token)
 //        println("Total events fetched: ${allEvents.size}")
@@ -399,7 +338,7 @@ fun main() = runBlocking {
 //            it.toGCalEvent().toUploadEvent()
 //        }
 //        insertCalendarEvents(accessGCtoken, uploadEvents)
-        val GcalEvents = getGcalEvents(accessGCtoken)
+        //val GcalEvents = getGcalEvents(accessGCtoken)
 
 
     } catch (e: Exception) {

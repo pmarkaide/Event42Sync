@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+
 /////////////// GET campus summary ///////////////
 
 @Serializable
@@ -129,9 +130,9 @@ suspend fun deleteAllEvents(accessToken: String) {
 }
 
 
-suspend fun fetchAllCampusEvents(access_token:String): List<`Event42`> {
+suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
     val client = HttpClient(CIO)
-    val allEvent42s = mutableListOf<`Event42`>()
+    val allEvent42s = mutableListOf<Event42>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
     val zone = ZoneId.systemDefault() // Get system default time zone
@@ -162,7 +163,7 @@ suspend fun fetchAllCampusEvents(access_token:String): List<`Event42`> {
             }
 
             // Parse JSON response as a list of campuses
-            val Event42List = json.decodeFromString<List<`Event42`>>(jsonString)
+            val Event42List = json.decodeFromString<List<Event42>>(jsonString)
 
             // Add campuses to the list
             allEvent42s.addAll(Event42List)
@@ -207,24 +208,101 @@ suspend fun fetchAllCampusEvents(access_token:String): List<`Event42`> {
     return modifiedEvents
 }
 
-// Connect to SQLite database
-fun getDatabaseConnection(): Connection {
-    val url = "jdbc:sqlite:events.db"
-    return DriverManager.getConnection(url)
+// Database configuration object
+object DatabaseConfig {
+    const val DATABASE_URL = "jdbc:sqlite:events.db"
+
+    object Tables {
+        const val EVENTS = "events"
+    }
+
+    object Columns {
+        const val ID = "id"
+        const val GCAL_EVENT_ID = "gcal_event_id"
+        const val LAST_UPDATED = "last_updated"
+    }
 }
 
-// Create the schema
-fun createSchema(connection: Connection) {
-    val statement = connection.createStatement()
-    statement.execute(
-        """
-        CREATE TABLE IF NOT EXISTS events (
-            id TEXT PRIMARY KEY,
-            gcal_event_id TEXT,
-            last_updated TEXT
-        )
-        """
-    )
+class DatabaseManager private constructor() {
+    private var connection: Connection? = null
+
+    companion object {
+        @Volatile
+        private var instance: DatabaseManager? = null
+
+        init {
+            Class.forName("org.sqlite.JDBC")
+        }
+
+        fun getInstance(): DatabaseManager {
+            return instance ?: synchronized(this) {
+                instance ?: DatabaseManager().also {
+                    instance = it
+                    it.initializeDatabase()
+                }
+            }
+        }
+    }
+
+    private fun initializeDatabase() {
+        getConnection().createStatement().use { stmt ->
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS ${DatabaseConfig.Tables.EVENTS} (
+                    ${DatabaseConfig.Columns.ID} INTEGER PRIMARY KEY,
+                    ${DatabaseConfig.Columns.GCAL_EVENT_ID} TEXT,
+                    ${DatabaseConfig.Columns.LAST_UPDATED} TEXT
+                )
+            """)
+        }
+    }
+
+    fun getConnection(): Connection {
+        return connection ?: synchronized(this) {
+            connection ?: DriverManager.getConnection(DatabaseConfig.DATABASE_URL).also {
+                connection = it
+            }
+        }
+    }
+
+    fun upsertEvent(id: Int, gcalEventId: String?, lastUpdated: String) {
+        getConnection().prepareStatement("""
+            INSERT INTO ${DatabaseConfig.Tables.EVENTS} (
+                ${DatabaseConfig.Columns.ID}, 
+                ${DatabaseConfig.Columns.GCAL_EVENT_ID}, 
+                ${DatabaseConfig.Columns.LAST_UPDATED}
+            )
+            VALUES (?, ?, ?)
+            ON CONFLICT(${DatabaseConfig.Columns.ID}) DO UPDATE SET
+                ${DatabaseConfig.Columns.GCAL_EVENT_ID} = excluded.${DatabaseConfig.Columns.GCAL_EVENT_ID},
+                ${DatabaseConfig.Columns.LAST_UPDATED} = excluded.${DatabaseConfig.Columns.LAST_UPDATED}
+        """).use { stmt ->
+            stmt.setInt(1, id)
+            stmt.setString(2, gcalEventId)
+            stmt.setString(3, lastUpdated)
+            stmt.executeUpdate()
+        }
+    }
+
+    fun fetchEvents(): List<Pair<String, String?>> {
+        return getConnection().createStatement().use { stmt ->
+            stmt.executeQuery("""
+                SELECT ${DatabaseConfig.Columns.ID}, ${DatabaseConfig.Columns.GCAL_EVENT_ID} 
+                FROM ${DatabaseConfig.Tables.EVENTS}
+            """).use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(rs.getString(DatabaseConfig.Columns.ID) to
+                                rs.getString(DatabaseConfig.Columns.GCAL_EVENT_ID))
+                    }
+                }
+            }
+        }
+    }
+
+    fun closeConnection() {
+        connection?.close()
+        connection = null
+    }
 }
 
 fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
@@ -236,16 +314,23 @@ fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
         val allEvents = fetchAllCampusEvents(access42token)
         println("Total events fetched: ${allEvents.size}")
 
-        println("Initializing SQLite database...")
-        val connection = getDatabaseConnection()
-        createSchema(connection)
+        println("Initializing database...")
+        val dbManager = DatabaseManager.getInstance()
 
         println("Uploading events to GCal...")
-        for (event in allEvents) {
-            val eventGCalID = createGCalEvent(accessGCtoken, event) // POST to Google Calendar
-            upsertEvent(connection, event.id, eventGCalID, event.updatedAt) // Insert into SQLite
+        try {
+            for (event in allEvents) {
+                val eventGCalID = createGCalEvent(accessGCtoken, event)
+                try {
+                    dbManager.upsertEvent(event.id, eventGCalID, event.updatedAt)
+                } catch (e: Exception) {
+                    println("Failed to save event ${event.id} to database: ${e.message}")
+                    break
+                }
+            }
+        } finally {
+            dbManager.closeConnection()
         }
-        //insertCalendarEvents(accessGCtoken, uploadEvents)
     }
     catch (e: Exception) {
         println("Error occurred: ${e.message}")
