@@ -126,52 +126,6 @@ data class GCalEventsResponse(
     val items: List<EventGCal> = emptyList() // List of events
 )
 
-suspend fun getGcalEvents(accessToken: String): List<EventGCal> {
-    val client = HttpClient(CIO)
-
-    val dotenv = Dotenv.load()
-    val calendarID = dotenv["calendar_id"]
-
-    val zone = ZoneId.systemDefault() // Get system default time zone
-    val currentTime = LocalDate.now(zone)
-        .minusDays(1) // Move to the previous day (yesterday)
-        .atStartOfDay(zone) // Set to midnight of the previous day
-        .toInstant()
-    // Format the current time in ISO 8601 format (UTC timezone) for the API
-    val formatter = DateTimeFormatter.ISO_INSTANT
-    val formattedTime = formatter.format(currentTime)
-    println(formattedTime)
-    try {
-        val response: HttpResponse = client.get(
-            "https://www.googleapis.com/calendar/v3/calendars/$calendarID/" +
-                    "events?singleEvents=true&timeMin=2024-12-26T22:00:00Z"
-        ) {
-            header(HttpHeaders.Authorization, "Bearer $accessToken")
-        }
-
-        // Check if the response was successful
-        if (!response.status.isSuccess()) {
-            throw Exception("Failed to fetch events: ${response.status}")
-        }
-        println(response.bodyAsText())
-        val jsonString = response.bodyAsText()
-        if (jsonString.isEmpty()) {
-            println("No events found for the given time range.")
-            return emptyList() // Return empty list if no events found
-        }
-
-        // Deserialize the response JSON to a list of GCalEvent objects
-        val responseWrapper = json.decodeFromString<GCalEventsResponse>(jsonString)
-        return responseWrapper.items
-    } catch (e: Exception) {
-        println("Error occurred: ${e.message}")
-        return emptyList() // Return empty list in case of error
-    } finally {
-        client.close()
-    }
-}
-
-
 suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
     val client = HttpClient(CIO)
     val allEvent42s = mutableListOf<Event42>()
@@ -181,7 +135,7 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
     // set current time as yesterday at midnight
     // value is relative to UTC. Modify by timezones as needed
     val currentTime = LocalDate.now(zone)
-        .minusDays(10) // Move to the previous day (yesterday)
+        .minusDays(1) // Move to the previous day (yesterday)
         .atStartOfDay(zone) // Set to midnight of the previous day
         .toInstant()
     var stopPagination = false
