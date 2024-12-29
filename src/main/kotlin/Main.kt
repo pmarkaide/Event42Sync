@@ -181,7 +181,7 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
     // set current time as yesterday at midnight
     // value is relative to UTC. Modify by timezones as needed
     val currentTime = LocalDate.now(zone)
-        .minusDays(1) // Move to the previous day (yesterday)
+        .minusDays(10) // Move to the previous day (yesterday)
         .atStartOfDay(zone) // Set to midnight of the previous day
         .toInstant()
     var stopPagination = false
@@ -253,8 +253,8 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
 fun Event42.toGCalEvent(): EventGCal {
     val timeZone = "Europe/Helsinki"
 
-    val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
-    val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(java.time.ZoneId.of(timeZone))
+    val startDateTime = ZonedDateTime.parse(beginAt).withZoneSameInstant(ZoneId.of(timeZone))
+    val endDateTime = ZonedDateTime.parse(endAt).withZoneSameInstant(ZoneId.of(timeZone))
 
     return EventGCal(
         id = this.id.toString(),
@@ -331,7 +331,7 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
     try {
         // 1. Fetch updated events from 42 API
         println("Fetching events from 42 API...")
-        val updatedEvents = fetchAllCampusEvents(access42token)
+        val updatedEvents = fetchUpdatedCampusEvents(access42token)
         println("Found ${updatedEvents.size} events from 42")
 
         // 2. Get existing events from database
@@ -388,6 +388,37 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
     }
 }
 
+suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42: Event42) {
+    val dotenv = Dotenv.load()
+    val calendarId = dotenv["calendar_id"]
+    val client = HttpClient(CIO)
+    try {
+        // Transform Event42 to EventGCal and Nullify non-required fields
+        val uploadEvent = event42.toGCalEvent().toUploadEvent()
+        val eventJson = json.encodeToString(uploadEvent)
+
+        val response = client.put("https://www.googleapis.com/calendar/v3/calendars/$calendarId/events/$gcalEventId") {
+            headers {
+                append(HttpHeaders.Authorization, "Bearer $accessGCtoken")
+                append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            }
+            setBody(eventJson) // Convert JsonObject to String
+        }
+
+        // Handle response
+        if (response.status.isSuccess()) {
+            println("PUT 42 ${event42.name}")
+        } else {
+            println("Failed to PUT 42 event: ${response.status}")
+        }
+    } catch (e: Exception) {
+        println("Error to PUT 42 event ${event42.name}: ${e.message}")
+    } finally {
+        client.close()
+    }
+}
+
+
 fun main() = runBlocking {
     try {
         // Fetch the access tokens
@@ -397,11 +428,10 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        initCalendar(accessGCtoken, access42Token)
+        //initCalendar(accessGCtoken, access42Token)
 
         // daily sync
         syncEvents(access42Token, accessGCtoken)
-
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")
