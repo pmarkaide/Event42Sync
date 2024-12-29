@@ -19,8 +19,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.sql.Connection
-import java.sql.ResultSet
 
 
 @Serializable
@@ -318,6 +316,78 @@ suspend fun createGCalEvent(
     }
 }
 
+// Helper data class to store database event information
+data class EventDBInfo(
+    val gcalEventId: String,
+    val title: String,
+    val beginAt: String,
+    val lastUpdated: String
+)
+
+fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
+    println("Starting sync process...")
+    val dbManager = DatabaseManager.getInstance()
+
+    try {
+        // 1. Fetch updated events from 42 API
+        println("Fetching events from 42 API...")
+        val updatedEvents = fetchAllCampusEvents(access42token)
+        println("Found ${updatedEvents.size} events from 42")
+
+        // 2. Get existing events from database
+        val dbEvents = dbManager.fetchEvents().associate { dbEvent ->
+            dbEvent.id.toInt() to EventDBInfo(
+                gcalEventId = dbEvent.gcalEventId,
+                title = dbEvent.title,
+                beginAt = dbEvent.beginAt,
+                lastUpdated = dbEvent.lastUpdated
+            )
+        }
+
+        // 3. Process each event from 42
+        for (event42 in updatedEvents) {
+            val dbEvent = dbEvents[event42.id]
+
+            if (dbEvent == null) {
+                // New event - Create in Google Calendar
+                println("Creating new event: ${event42.name}")
+                val eventGCalID = createGCalEvent(accessGCtoken, event42)
+                dbManager.upsertEvent(
+                    id = event42.id,
+                    gcalEventId = eventGCalID,
+                    lastUpdated = event42.updatedAt,
+                    title = event42.name,
+                    beginAt = event42.beginAt
+                )
+            } else if (dbEvent.lastUpdated != event42.updatedAt) {
+                // Event exists but was updated - Update in Google Calendar
+                println("Updating event: ${event42.name}")
+                updateGCalEvent(
+                    accessGCtoken,
+                    dbEvent.gcalEventId,
+                    event42
+                )
+                dbManager.upsertEvent(
+                    id = event42.id,
+                    gcalEventId = dbEvent.gcalEventId,
+                    lastUpdated = event42.updatedAt,
+                    title = event42.name,
+                    beginAt = event42.beginAt
+                )
+            } else {
+                println("Event ${event42.name} is up to date")
+            }
+        }
+
+        println("Sync completed successfully!")
+
+    } catch (e: Exception) {
+        println("Error during sync: ${e.message}")
+    } finally {
+        dbManager.closeConnection()
+    }
+}
+
 fun main() = runBlocking {
     try {
         // Fetch the access tokens
@@ -328,17 +398,9 @@ fun main() = runBlocking {
 
         // init_calendar
         initCalendar(accessGCtoken, access42Token)
-//        println("Fetching 42 events...")
-//        val allEvents = fetchUpdatedCampusEvents(access42Token)
-//        println("Total events fetched: ${allEvents.size}")
-//
-//        println("Uploading events to Gcal...")
-//        // Convert the list of Event objects to Google Calendar event format
-//        val uploadEvents = allEvents.map {
-//            it.toGCalEvent().toUploadEvent()
-//        }
-//        insertCalendarEvents(accessGCtoken, uploadEvents)
-        //val GcalEvents = getGcalEvents(accessGCtoken)
+
+        // daily sync
+        syncEvents(access42Token, accessGCtoken)
 
 
     } catch (e: Exception) {

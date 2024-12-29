@@ -225,6 +225,15 @@ object DatabaseConfig {
     }
 }
 
+// Helper data class for database events
+data class DatabaseEvent(
+    val id: String,
+    val gcalEventId: String,
+    val title: String,
+    val beginAt: String,
+    val lastUpdated: String
+)
+
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
 
@@ -293,16 +302,25 @@ class DatabaseManager private constructor() {
         }
     }
 
-    fun fetchEvents(): List<Pair<String, String?>> {
+    fun fetchEvents(): List<DatabaseEvent> {
         return getConnection().createStatement().use { stmt ->
             stmt.executeQuery("""
-                SELECT ${DatabaseConfig.Columns.ID}, ${DatabaseConfig.Columns.GCAL_EVENT_ID} 
-                FROM ${DatabaseConfig.Tables.EVENTS}
-            """).use { rs ->
+            SELECT ${DatabaseConfig.Columns.ID}, 
+                   ${DatabaseConfig.Columns.GCAL_EVENT_ID},
+                   ${DatabaseConfig.Columns.TITLE},
+                   ${DatabaseConfig.Columns.BEGIN_AT},
+                   ${DatabaseConfig.Columns.LAST_UPDATED}
+            FROM ${DatabaseConfig.Tables.EVENTS}
+        """).use { rs ->
                 buildList {
                     while (rs.next()) {
-                        add(rs.getString(DatabaseConfig.Columns.ID) to
-                                rs.getString(DatabaseConfig.Columns.GCAL_EVENT_ID))
+                        add(DatabaseEvent(
+                            id = rs.getString(DatabaseConfig.Columns.ID),
+                            gcalEventId = rs.getString(DatabaseConfig.Columns.GCAL_EVENT_ID),
+                            title = rs.getString(DatabaseConfig.Columns.TITLE),
+                            beginAt = rs.getString(DatabaseConfig.Columns.BEGIN_AT),
+                            lastUpdated = rs.getString(DatabaseConfig.Columns.LAST_UPDATED)
+                        ))
                     }
                 }
             }
