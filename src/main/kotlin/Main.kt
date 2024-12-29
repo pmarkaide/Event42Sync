@@ -270,14 +270,6 @@ suspend fun createGCalEvent(
     }
 }
 
-// Helper data class to store database event information
-data class EventDBInfo(
-    val gcalEventId: String,
-    val title: String,
-    val beginAt: String,
-    val lastUpdated: String
-)
-
 fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
     println("Starting sync process...")
     val dbManager = DatabaseManager.getInstance()
@@ -289,14 +281,7 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
         println("Found ${updatedEvents.size} events from 42")
 
         // 2. Get existing events from database
-        val dbEvents = dbManager.fetchEvents().associate { dbEvent ->
-            dbEvent.id.toInt() to EventDBInfo(
-                gcalEventId = dbEvent.gcalEventId,
-                title = dbEvent.title,
-                beginAt = dbEvent.beginAt,
-                lastUpdated = dbEvent.lastUpdated
-            )
-        }
+        val dbEvents = dbManager.fetchEvents().associateBy { dbEvent -> dbEvent.id.toInt() }
 
         // 3. Process each event from 42
         for (event42 in updatedEvents) {
