@@ -1,3 +1,4 @@
+import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
@@ -7,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.Timestamp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -55,7 +57,7 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
                 if (eventBeginAt.isAfter(currentTime)) {
                     continue
                 } else {
-                    stopPagination = true;
+                    stopPagination = true
                     break
                 }
             }
@@ -89,23 +91,6 @@ suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
     return modifiedEvents
 }
 
-// Database configuration object
-object DatabaseConfig {
-    const val DATABASE_URL = "jdbc:sqlite:events.db"
-
-    object Tables {
-        const val EVENTS = "events"
-    }
-
-    object Columns {
-        const val ID = "id"
-        const val GCAL_EVENT_ID = "gcal_event_id"
-        const val TITLE = "title"
-        const val BEGIN_AT ="begin_at"
-        const val LAST_UPDATED = "last_updated"
-    }
-}
-
 // Helper data class for database events
 data class DatabaseEvent(
     val id: String,
@@ -117,14 +102,11 @@ data class DatabaseEvent(
 
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
+    private val dotenv = Dotenv.load()
 
     companion object {
         @Volatile
         private var instance: DatabaseManager? = null
-
-        init {
-            Class.forName("org.sqlite.JDBC")
-        }
 
         fun getInstance(): DatabaseManager {
             return instance ?: synchronized(this) {
@@ -136,49 +118,64 @@ class DatabaseManager private constructor() {
         }
     }
 
-    private fun initializeDatabase() {
-        getConnection().createStatement().use { stmt ->
-            stmt.execute("""
-                CREATE TABLE IF NOT EXISTS ${DatabaseConfig.Tables.EVENTS} (
-                    ${DatabaseConfig.Columns.ID} INTEGER PRIMARY KEY,
-                    ${DatabaseConfig.Columns.GCAL_EVENT_ID} TEXT,
-                    ${DatabaseConfig.Columns.TITLE} TEXT,
-                    ${DatabaseConfig.Columns.BEGIN_AT} TEXT,
-                    ${DatabaseConfig.Columns.LAST_UPDATED} TEXT
-                )
-            """)
-        }
-    }
-
-    fun getConnection(): Connection {
+    private fun getConnection(): Connection {
         return connection ?: synchronized(this) {
-            connection ?: DriverManager.getConnection(DatabaseConfig.DATABASE_URL).also {
+            val dbUrl = dotenv["DATABASE_URL"] ?: throw IllegalStateException("DATABASE_URL not set")
+            val dbUser = dotenv["DATABASE_USER"] ?: throw IllegalStateException("DATABASE_USER not set")
+            val dbPassword = dotenv["DATABASE_PASSWORD"] ?: throw IllegalStateException("DATABASE_PASSWORD not set")
+
+            connection ?: DriverManager.getConnection(dbUrl, dbUser, dbPassword).also {
                 connection = it
             }
         }
     }
 
+    private fun initializeDatabase() {
+        try {
+            // First check if the events table exists
+            val tableExists = getConnection().metaData.let { metadata ->
+                val rs = metadata.getTables(null, null, "events", null)
+                rs.next()
+            }
+
+            if (!tableExists) {
+                println("Creating events table...") // Debug log
+                getConnection().createStatement().use { stmt ->
+                    stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS events (
+                        id INTEGER PRIMARY KEY,
+                        gcal_event_id TEXT,
+                        title TEXT,
+                        begin_at TIMESTAMP,
+                        last_updated TIMESTAMP
+                    )
+                """)
+                    println("Events table created successfully!") // Debug log
+                }
+            } else {
+                println("Events table already exists") // Debug log
+            }
+        } catch (e: Exception) {
+            println("Failed to initialize database: ${e.message}")
+            throw e
+        }
+    }
+
     fun upsertEvent(id: Int, gcalEventId: String?, title: String, beginAt: String, lastUpdated: String) {
         getConnection().prepareStatement("""
-            INSERT INTO ${DatabaseConfig.Tables.EVENTS} (
-                ${DatabaseConfig.Columns.ID}, 
-                ${DatabaseConfig.Columns.GCAL_EVENT_ID}, 
-                ${DatabaseConfig.Columns.TITLE},
-                ${DatabaseConfig.Columns.BEGIN_AT}, 
-                ${DatabaseConfig.Columns.LAST_UPDATED}
-            )
+            INSERT INTO events (id, gcal_event_id, title, begin_at, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(${DatabaseConfig.Columns.ID}) DO UPDATE SET
-                ${DatabaseConfig.Columns.GCAL_EVENT_ID} = excluded.${DatabaseConfig.Columns.GCAL_EVENT_ID},
-                ${DatabaseConfig.Columns.TITLE} = excluded.${DatabaseConfig.Columns.TITLE},
-                ${DatabaseConfig.Columns.BEGIN_AT} = excluded.${DatabaseConfig.Columns.BEGIN_AT},
-                ${DatabaseConfig.Columns.LAST_UPDATED} = excluded.${DatabaseConfig.Columns.LAST_UPDATED}
+            ON CONFLICT (id) DO UPDATE SET
+                gcal_event_id = EXCLUDED.gcal_event_id,
+                title = EXCLUDED.title,
+                begin_at = EXCLUDED.begin_at,
+                last_updated = EXCLUDED.last_updated
         """).use { stmt ->
             stmt.setInt(1, id)
             stmt.setString(2, gcalEventId)
             stmt.setString(3, title)
-            stmt.setString(4, beginAt)
-            stmt.setString(5, lastUpdated)
+            stmt.setTimestamp(4, Timestamp.from(Instant.parse(beginAt)))
+            stmt.setTimestamp(5, Timestamp.from(Instant.parse(lastUpdated)))
             stmt.executeUpdate()
         }
     }
@@ -186,21 +183,17 @@ class DatabaseManager private constructor() {
     fun fetchEvents(): List<DatabaseEvent> {
         return getConnection().createStatement().use { stmt ->
             stmt.executeQuery("""
-            SELECT ${DatabaseConfig.Columns.ID}, 
-                   ${DatabaseConfig.Columns.GCAL_EVENT_ID},
-                   ${DatabaseConfig.Columns.TITLE},
-                   ${DatabaseConfig.Columns.BEGIN_AT},
-                   ${DatabaseConfig.Columns.LAST_UPDATED}
-            FROM ${DatabaseConfig.Tables.EVENTS}
-        """).use { rs ->
+                SELECT id, gcal_event_id, title, begin_at, last_updated
+                FROM events
+            """).use { rs ->
                 buildList {
                     while (rs.next()) {
                         add(DatabaseEvent(
-                            id = rs.getString(DatabaseConfig.Columns.ID),
-                            gcalEventId = rs.getString(DatabaseConfig.Columns.GCAL_EVENT_ID),
-                            title = rs.getString(DatabaseConfig.Columns.TITLE),
-                            beginAt = rs.getString(DatabaseConfig.Columns.BEGIN_AT),
-                            lastUpdated = rs.getString(DatabaseConfig.Columns.LAST_UPDATED)
+                            id = rs.getInt("id").toString(),
+                            gcalEventId = rs.getString("gcal_event_id"),
+                            title = rs.getString("title"),
+                            beginAt = rs.getTimestamp("begin_at").toInstant().toString(),
+                            lastUpdated = rs.getTimestamp("last_updated").toInstant().toString()
                         ))
                     }
                 }

@@ -34,8 +34,11 @@ dependencies {
     implementation("org.slf4j:slf4j-nop:2.0.6")
     implementation("io.ktor:ktor-client-cio-jvm:2.3.0")
 
-    // SQLlite
+    // SQLite
     implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+
+    // PostgresSQL
+    implementation("org.postgresql:postgresql:42.7.1")
 }
 
 application {
