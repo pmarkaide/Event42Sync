@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.24"
     application
     kotlin("plugin.serialization") version "1.9.24"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 repositories {
@@ -39,8 +40,18 @@ dependencies {
 
     // PostgresSQL
     implementation("org.postgresql:postgresql:42.7.1")
+
+    // AWS lambda
+    implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
+    implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
 }
 
 application {
     mainClass.set("com.Event42Sync.MainKt")
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("event42sync")
+    archiveClassifier.set("")
+    archiveVersion.set("")
 }
