@@ -1,3 +1,4 @@
+package com.Event42Sync
 import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*

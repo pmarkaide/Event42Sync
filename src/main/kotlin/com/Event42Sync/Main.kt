@@ -1,3 +1,4 @@
+package com.Event42Sync
 import com.google.auth.oauth2.ServiceAccountCredentials
 import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
