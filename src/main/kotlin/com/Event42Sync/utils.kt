@@ -1,15 +1,10 @@
-import io.github.cdimascio.dotenv.Dotenv
+package com.Event42Sync
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.*
-import java.sql.Connection
-import java.sql.DriverManager
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -90,8 +85,7 @@ fun printAllCampuses(campuses: List<Campus>) {
 suspend fun getGcalEvents(accessToken: String): List<EventGCal> {
     val client = HttpClient(CIO)
 
-    val dotenv = Dotenv.load()
-    val calendarID = dotenv["calendar_id"]
+    val calendarID = Config.get("CALENDAR_ID")
 
     val zone = ZoneId.systemDefault() // Get system default time zone
     val currentTime = LocalDate.now(zone)
@@ -146,8 +140,7 @@ data class EventsResponse(val items: List<EventID>)
 suspend fun deleteAllEvents(accessToken: String) {
     val client = HttpClient(CIO)
 
-    val dotenv = Dotenv.load()
-    val calendarID = dotenv["calendar_id"]
+    val calendarID = Config.get("CALENDAR_ID")
     try {
         // Step 1: Fetch events
         val response: HttpResponse = client.get("https://www.googleapis.com/calendar/v3/calendars/$calendarID/" +

@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.24"
     application
     kotlin("plugin.serialization") version "1.9.24"
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 repositories {
@@ -34,10 +35,28 @@ dependencies {
     implementation("org.slf4j:slf4j-nop:2.0.6")
     implementation("io.ktor:ktor-client-cio-jvm:2.3.0")
 
-    // SQLlite
+    // SQLite
     implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+
+    // PostgresSQL
+    implementation("org.postgresql:postgresql:42.7.1")
+
+    // AWS
+    implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
+    implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
+    implementation("com.amazonaws:aws-java-sdk-ssm:1.12.+")
 }
 
 application {
     mainClass.set("com.Event42Sync.MainKt")
+}
+
+tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
+    archiveBaseName.set("event42sync")
+    archiveClassifier.set("")
+    archiveVersion.set("")
+    mergeServiceFiles()
+    manifest {
+        attributes(mapOf("Main-Class" to "com.Event42Sync.MainKt"))
+    }
 }
