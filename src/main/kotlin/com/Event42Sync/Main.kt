@@ -395,10 +395,10 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        //initCalendar(accessGCtoken, access42Token)
+        initCalendar(accessGCtoken, access42Token)
 
         // daily sync
-        syncEvents(access42Token, accessGCtoken)
+        //syncEvents(access42Token, accessGCtoken)
 
     } catch (e: Exception) {
         println("Error occurred: ${e.message}")

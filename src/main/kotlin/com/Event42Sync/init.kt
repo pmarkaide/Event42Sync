@@ -103,6 +103,9 @@ data class DatabaseEvent(
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
 
+    init {
+        Class.forName("org.postgresql.Driver")
+    }
     companion object {
         @Volatile
         private var instance: DatabaseManager? = null
@@ -119,16 +122,55 @@ class DatabaseManager private constructor() {
 
     private fun getConnection(): Connection {
         return connection ?: synchronized(this) {
-            val dbUrl = Config.get("DATABASE_URL")
-            val dbUser = Config.get("DATABASE_USER")
-            val dbPassword = Config.get("DATABASE_PASSWORD")
+            try {
+                val dbUrl = Config.get("DATABASE_URL")
+                val dbUser = Config.get("DATABASE_USER")
+                val dbPassword = Config.get("DATABASE_PASSWORD")
 
-            connection ?: DriverManager.getConnection(dbUrl, dbUser, dbPassword).also {
-                connection = it
+                println("Configuration:")
+                println("Database URL: $dbUrl")
+                println("VPC: ${System.getenv("AWS_LAMBDA_VPC_ID") ?: "Not in VPC"}")
+                println("Subnet: ${System.getenv("AWS_LAMBDA_SUBNET_ID") ?: "No subnet info"}")
+
+                println("Attempting to connect to postgres database...")
+                val baseUrl = dbUrl.substring(0, dbUrl.lastIndexOf('/')) + "/postgres"
+                println("Base URL for postgres: $baseUrl")
+
+                try {
+                    val adminConn = DriverManager.getConnection(baseUrl, dbUser, dbPassword)
+                    println("Connected to postgres database successfully!")
+
+                    adminConn.createStatement().use { stmt ->
+                        println("Creating database if not exists...")
+                        stmt.execute("CREATE DATABASE \"event42sync-db\" WITH OWNER = postgres")
+                        println("Database created or already exists!")
+                    }
+
+                    adminConn.close()
+                    println("Closed admin connection")
+
+                    // Now connect to our newly created database
+                    println("Connecting to event42sync-db...")
+                    connection = DriverManager.getConnection(dbUrl, dbUser, dbPassword)
+                    println("✅ Connected to event42sync-db successfully!")
+                    connection!!
+                } catch (e: Exception) {
+                    println("❌ Connection failed with specific error:")
+                    println("Error class: ${e.javaClass.name}")
+                    println("Error message: ${e.message}")
+                    println("Stack trace:")
+                    e.printStackTrace()
+                    throw e
+                }
+            } catch (e: Exception) {
+                println("❌ Overall connection attempt failed:")
+                println("Error type: ${e.javaClass.name}")
+                println("Error message: ${e.message}")
+                e.printStackTrace()
+                throw e
             }
         }
     }
-
     private fun initializeDatabase() {
         try {
             // First check if the events table exists

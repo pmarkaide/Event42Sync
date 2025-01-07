@@ -45,15 +45,18 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
     implementation("com.amazonaws:aws-java-sdk-ssm:1.12.+")
-
 }
 
 application {
     mainClass.set("com.Event42Sync.MainKt")
 }
 
-tasks.shadowJar {
+tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     archiveBaseName.set("event42sync")
     archiveClassifier.set("")
     archiveVersion.set("")
+    mergeServiceFiles()
+    manifest {
+        attributes(mapOf("Main-Class" to "com.Event42Sync.MainKt"))
+    }
 }
