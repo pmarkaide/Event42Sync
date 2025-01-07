@@ -41,9 +41,11 @@ dependencies {
     // PostgresSQL
     implementation("org.postgresql:postgresql:42.7.1")
 
-    // AWS lambda
+    // AWS
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
+    implementation("com.amazonaws:aws-java-sdk-ssm:1.12.+")
+
 }
 
 application {

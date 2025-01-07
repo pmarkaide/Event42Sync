@@ -1,5 +1,4 @@
 package com.Event42Sync
-import com.google.auth.oauth2.ServiceAccountCredentials
 import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -20,7 +19,18 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder
+import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest
+import com.google.auth.oauth2.ServiceAccountCredentials
 
+
+
+object Config {
+    fun get(key: String): String {
+        return System.getenv(key) ?: Dotenv.load()[key] ?:
+        throw IllegalStateException("$key not set")
+    }
+}
 
 @Serializable
 data class AccessTokenResponse(
@@ -40,9 +50,8 @@ fun extractAccessToken(response: String): String {
 @OptIn(InternalAPI::class)
 suspend fun fetch42AccessToken(): String {
     // Load your environment variables securely
-    val dotenv = Dotenv.load()
-    val clientId = dotenv["UID"]
-    val clientSecret = dotenv["SECRET"]
+    val clientId = Config.get("UID")
+    val clientSecret = Config.get("SECRET")
 
     val client = HttpClient()
 
@@ -51,8 +60,8 @@ suspend fun fetch42AccessToken(): String {
             header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded)
             body = FormDataContent(Parameters.build {
                 append("grant_type", "client_credentials")  // Or "authorization_code" depending on your flow
-                append("client_id", clientId ?: "")
-                append("client_secret", clientSecret ?: "")
+                append("client_id", clientId)
+                append("client_secret", clientSecret)
             })
         }
         val responseBody = response.bodyAsText()
@@ -70,19 +79,38 @@ suspend fun fetch42AccessToken(): String {
 }
 
 fun fetchGCAccessToken(): String {
-    val pathToKeyFile = "event42sync.json"
+    val credentials = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+        // We're in AWS Lambda
+        val ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient()
+        val privateKey = ssmClient.getParameter(
+            GetParameterRequest()
+                .withName("/event42sync/gc-private-key")
+                .withWithDecryption(true)
+        ).parameter.value
 
-    val credentials = ServiceAccountCredentials
-        .fromStream(FileInputStream(pathToKeyFile))
-        .createScoped(
-            listOf(
-                "https://www.googleapis.com/auth/calendar",
-                "https://www.googleapis.com/auth/calendar.events"
-            )
-        )
+        ServiceAccountCredentials.fromStream("""
+            {
+              "type": "service_account",
+              "project_id": "${Config.get("GC_PROJECT_ID")}",
+              "private_key_id": "${Config.get("GC_PRIVATE_KEY_ID")}",
+              "private_key": "$privateKey",
+              "client_email": "${Config.get("GC_CLIENT_EMAIL")}",
+              "client_id": "${Config.get("GC_CLIENT_ID")}",
+              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+              "token_uri": "https://oauth2.googleapis.com/token",
+              "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+              "client_x509_cert_url": "${Config.get("GC_CERT_URL")}"
+            }
+        """.trimIndent().byteInputStream())
+    } else {
+        // We're running locally
+        ServiceAccountCredentials.fromStream(FileInputStream("event42sync.json"))
+    }
 
-    val accessToken = credentials.refreshAccessToken().tokenValue
-    return accessToken
+    return credentials.createScoped(listOf(
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.events"
+    )).refreshAccessToken().tokenValue
 }
 
 @Serializable
@@ -237,8 +265,8 @@ suspend fun createGCalEvent(
     accessToken: String,
     event: Event42
 ): String? {
-    val dotenv = Dotenv.load()
-    val calendarId = dotenv["calendar_id"]
+
+    val calendarId = Config.get("CALENDAR_ID")
     val client = HttpClient(CIO)
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields
@@ -329,8 +357,7 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
 }
 
 suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42: Event42) {
-    val dotenv = Dotenv.load()
-    val calendarId = dotenv["calendar_id"]
+    val calendarId =Config.get("CALENDAR_ID")
     val client = HttpClient(CIO)
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields

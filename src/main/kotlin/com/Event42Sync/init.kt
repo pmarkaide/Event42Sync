@@ -1,5 +1,4 @@
 package com.Event42Sync
-import io.github.cdimascio.dotenv.Dotenv
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
@@ -103,7 +102,6 @@ data class DatabaseEvent(
 
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
-    private val dotenv = Dotenv.load()
 
     companion object {
         @Volatile
@@ -121,9 +119,9 @@ class DatabaseManager private constructor() {
 
     private fun getConnection(): Connection {
         return connection ?: synchronized(this) {
-            val dbUrl = dotenv["DATABASE_URL"] ?: throw IllegalStateException("DATABASE_URL not set")
-            val dbUser = dotenv["DATABASE_USER"] ?: throw IllegalStateException("DATABASE_USER not set")
-            val dbPassword = dotenv["DATABASE_PASSWORD"] ?: throw IllegalStateException("DATABASE_PASSWORD not set")
+            val dbUrl = Config.get("DATABASE_URL")
+            val dbUser = Config.get("DATABASE_USER")
+            val dbPassword = Config.get("DATABASE_PASSWORD")
 
             connection ?: DriverManager.getConnection(dbUrl, dbUser, dbPassword).also {
                 connection = it
