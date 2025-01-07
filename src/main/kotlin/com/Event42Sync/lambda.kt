@@ -7,7 +7,7 @@ class InitializationHandler : RequestHandler<Map<String, String>, String> {
     override fun handleRequest(input: Map<String, String>, context: Context): String {
         return try {
             runBlocking {
-                context.logger.log("Starting Event42Sync initialization")
+                context.logger.log("Starting Event42Sync reinitialization")
 
                 // Fetch the access tokens
                 context.logger.log("Fetching 42 access token...")
@@ -18,15 +18,15 @@ class InitializationHandler : RequestHandler<Map<String, String>, String> {
                 val accessGCtoken = fetchGCAccessToken()
                 context.logger.log("Google Calendar token obtained successfully")
 
-                // Run initialization
-                context.logger.log("Starting calendar initialization...")
-                initCalendar(accessGCtoken, access42Token)
-                context.logger.log("Calendar initialization completed")
+                // Run reinitialization using the new function
+                context.logger.log("Starting calendar reinitialization...")
+                reinitializeCalendar(accessGCtoken, access42Token, clearDatabase = true)
+                context.logger.log("Calendar reinitialization completed")
 
-                "Initialization completed successfully"
+                "Reinitialization completed successfully"
             }
         } catch (e: Exception) {
-            val errorMsg = "Error during initialization: ${e.message}"
+            val errorMsg = "Error during reinitialization: ${e.message}"
             context.logger.log(errorMsg)
             throw RuntimeException(errorMsg, e)
         }

@@ -175,6 +175,14 @@ class DatabaseManager private constructor() {
         }
     }
 
+    fun clearDatabase() {
+        getConnection().createStatement().use { stmt ->
+            println("Clearing all events from database...")
+            stmt.execute("TRUNCATE TABLE events")
+            println("✅ Database cleared successfully!")
+        }
+    }
+
     fun upsertEvent(id: Int, gcalEventId: String?, title: String, beginAt: String, lastUpdated: String) {
         getConnection().prepareStatement("""
             INSERT INTO events (id, gcal_event_id, title, begin_at, last_updated)
@@ -221,34 +229,66 @@ class DatabaseManager private constructor() {
     }
 }
 
-fun initCalendar(accessGCtoken: String, access42token: String) = runBlocking {
+suspend fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearDatabase: Boolean = true) = runBlocking {
     try {
-        println("Deleting all calendar events...")
+        println("Starting calendar reinitialization...")
+
+        // Step 1: Delete all events from Google Calendar
+        println("Deleting all calendar events from Google Calendar...")
         deleteAllEvents(accessGCtoken)
+        println("✅ Calendar cleared successfully!")
 
-        println("Fetching 42 events...")
-        val allEvents = fetchAllCampusEvents(access42token)
-        println("Total events fetched: ${allEvents.size}")
-
-        println("Initializing database...")
+        // Step 2: Clear database if requested
         val dbManager = DatabaseManager.getInstance()
+        if (clearDatabase) {
+            dbManager.clearDatabase()
+        }
 
-        println("Uploading events to GCal...")
+        // Step 3: Fetch all events from 42 API
+        println("Fetching events from 42 API...")
+        val allEvents = fetchAllCampusEvents(access42token)
+        println("✅ Total events fetched: ${allEvents.size}")
+
+        // Step 4: Upload events to new calendar and database
+        println("Uploading events to Google Calendar and database...")
+        var successCount = 0
+        var failureCount = 0
+
         try {
             for (event in allEvents) {
-                val eventGCalID = createGCalEvent(accessGCtoken, event)
                 try {
-                    dbManager.upsertEvent(event.id, eventGCalID, event.name, event.beginAt, event.updatedAt)
+                    val eventGCalID = createGCalEvent(accessGCtoken, event)
+                    if (eventGCalID != null) {
+                        dbManager.upsertEvent(
+                            id = event.id,
+                            gcalEventId = eventGCalID,
+                            title = event.name,
+                            beginAt = event.beginAt,
+                            lastUpdated = event.updatedAt
+                        )
+                        successCount++
+                    } else {
+                        failureCount++
+                        println("❌ Failed to create GCal event for: ${event.name}")
+                    }
                 } catch (e: Exception) {
-                    println("Failed to save event ${event.id} to database: ${e.message}")
-                    break
+                    failureCount++
+                    println("❌ Error processing event ${event.name}: ${e.message}")
+                    // Continue with next event instead of breaking
                 }
             }
         } finally {
             dbManager.closeConnection()
         }
-    }
-    catch (e: Exception) {
-        println("Error occurred: ${e.message}")
+
+        println("\nReinitialization completed!")
+        println("Summary:")
+        println("- Total events processed: ${allEvents.size}")
+        println("- Successful: $successCount")
+        println("- Failed: $failureCount")
+
+    } catch (e: Exception) {
+        println("❌ Error during reinitialization: ${e.message}")
+        throw e
     }
 }
