@@ -81,12 +81,8 @@ suspend fun fetch42AccessToken(): String {
 fun fetchGCAccessToken(): String {
     val credentials = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
         // We're in AWS Lambda
-        val ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient()
-        val privateKey = ssmClient.getParameter(
-            GetParameterRequest()
-                .withName("/event42sync/gc-private-key")
-                .withWithDecryption(true)
-        ).parameter.value
+        val privateKey = object {}.javaClass.getResourceAsStream("/gc_private_key.txt")?.bufferedReader()?.use { it.readText() }
+            ?: throw IllegalStateException("Could not read private key file")
 
         ServiceAccountCredentials.fromStream("""
             {
