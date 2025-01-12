@@ -53,7 +53,7 @@ suspend fun fetch42AccessToken(): String {
     val clientId = Config.get("UID")
     val clientSecret = Config.get("SECRET")
 
-    val client = HttpClient()
+    val client = HttpClientConfig.createClient()
 
     try {
         val response: HttpResponse = client.post("https://api.intra.42.fr/oauth/token") {
@@ -156,7 +156,7 @@ data class GCalEventsResponse(
 )
 
 suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     val allEvent42s = mutableListOf<Event42>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
@@ -267,7 +267,7 @@ suspend fun createGCalEvent(
 ): String? {
 
     val calendarId = Config.get("CALENDAR_ID")
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields
         val uploadEvent = event.toGCalEvent().toUploadEvent()
@@ -358,7 +358,7 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
 
 suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42: Event42) {
     val calendarId =Config.get("CALENDAR_ID")
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields
         val uploadEvent = event42.toGCalEvent().toUploadEvent()

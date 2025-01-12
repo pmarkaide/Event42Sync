@@ -14,7 +14,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     val allEvent42s = mutableListOf<Event42>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
