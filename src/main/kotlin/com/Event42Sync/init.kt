@@ -1,17 +1,16 @@
 package com.Event42Sync
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.Timestamp
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.core.sync.RequestBody
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
     val client = HttpClientConfig.createClient()
@@ -102,10 +101,19 @@ data class DatabaseEvent(
 
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
+    private val s3Client = S3Client.builder().build()
+    private val bucketName = Config.get("S3_BUCKET_NAME")
+    private val dbFileName = "events.db"
+    private val localDbPath = "/tmp/$dbFileName" // For Lambda, use /tmp directory
 
     init {
-        Class.forName("org.postgresql.Driver")
+        Class.forName("org.sqlite.JDBC")
+        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+            // We're in AWS Lambda
+            downloadDatabaseFromS3()
+        }
     }
+
     companion object {
         @Volatile
         private var instance: DatabaseManager? = null
@@ -120,20 +128,44 @@ class DatabaseManager private constructor() {
         }
     }
 
+    private fun downloadDatabaseFromS3() {
+        try {
+            val getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(dbFileName)
+                .build()
+
+            s3Client.getObject(getObjectRequest).use { response ->
+                Files.copy(response, File(localDbPath).toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } catch (e: Exception) {
+            println("Failed to download database from S3 (this is normal for first run): ${e.message}")
+            // If download fails, a new database will be created
+        }
+    }
+
+    private fun uploadDatabaseToS3() {
+        try {
+            val putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(dbFileName)
+                .build()
+
+            s3Client.putObject(putObjectRequest, RequestBody.fromFile(File(localDbPath)))
+        } catch (e: Exception) {
+            println("Failed to upload database to S3: ${e.message}")
+            throw e
+        }
+    }
+
     private fun getConnection(): Connection {
         return connection ?: synchronized(this) {
             try {
-                val dbUrl = Config.get("DATABASE_URL")
-                val dbUser = Config.get("DATABASE_USER")
-                val dbPassword = Config.get("DATABASE_PASSWORD")
-
-                println("Attempting to connect to database...")
-                println("Database URL: $dbUrl")
-
-                connection = DriverManager.getConnection(dbUrl, dbUser, dbPassword)
+                println("Attempting to connect to SQLite database...")
+                // For Lambda, use the local temp directory
+                connection = DriverManager.getConnection("jdbc:sqlite:$localDbPath")
                 println("✅ Connection successful!")
                 connection!!
-
             } catch (e: Exception) {
                 println("❌ Database connection failed:")
                 println("Error type: ${e.javaClass.name}")
@@ -143,19 +175,12 @@ class DatabaseManager private constructor() {
             }
         }
     }
-    
+
     private fun initializeDatabase() {
         try {
-            // First check if the events table exists
-            val tableExists = getConnection().metaData.let { metadata ->
-                val rs = metadata.getTables(null, null, "events", null)
-                rs.next()
-            }
-
-            if (!tableExists) {
-                println("Creating events table...") // Debug log
-                getConnection().createStatement().use { stmt ->
-                    stmt.execute("""
+            getConnection().createStatement().use { stmt ->
+                // SQLite uses INTEGER PRIMARY KEY for autoincrementing primary keys
+                stmt.execute("""
                     CREATE TABLE IF NOT EXISTS events (
                         id INTEGER PRIMARY KEY,
                         gcal_event_id TEXT,
@@ -164,10 +189,7 @@ class DatabaseManager private constructor() {
                         last_updated TIMESTAMP
                     )
                 """)
-                    println("Events table created successfully!") // Debug log
-                }
-            } else {
-                println("Events table already exists") // Debug log
+                println("Events table created or verified successfully!")
             }
         } catch (e: Exception) {
             println("Failed to initialize database: ${e.message}")
@@ -175,23 +197,24 @@ class DatabaseManager private constructor() {
         }
     }
 
+    // The rest of the methods remain largely the same, just add S3 sync after modifications
+
     fun clearDatabase() {
         getConnection().createStatement().use { stmt ->
             println("Clearing all events from database...")
-            stmt.execute("TRUNCATE TABLE events")
+            stmt.execute("DELETE FROM events")
             println("✅ Database cleared successfully!")
+        }
+        // Sync to S3 after clearing
+        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+            uploadDatabaseToS3()
         }
     }
 
     fun upsertEvent(id: Int, gcalEventId: String?, title: String, beginAt: String, lastUpdated: String) {
         getConnection().prepareStatement("""
-            INSERT INTO events (id, gcal_event_id, title, begin_at, last_updated)
+            INSERT OR REPLACE INTO events (id, gcal_event_id, title, begin_at, last_updated)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (id) DO UPDATE SET
-                gcal_event_id = EXCLUDED.gcal_event_id,
-                title = EXCLUDED.title,
-                begin_at = EXCLUDED.begin_at,
-                last_updated = EXCLUDED.last_updated
         """).use { stmt ->
             stmt.setInt(1, id)
             stmt.setString(2, gcalEventId)
@@ -200,32 +223,19 @@ class DatabaseManager private constructor() {
             stmt.setTimestamp(5, Timestamp.from(Instant.parse(lastUpdated)))
             stmt.executeUpdate()
         }
-    }
-
-    fun fetchEvents(): List<DatabaseEvent> {
-        return getConnection().createStatement().use { stmt ->
-            stmt.executeQuery("""
-                SELECT id, gcal_event_id, title, begin_at, last_updated
-                FROM events
-            """).use { rs ->
-                buildList {
-                    while (rs.next()) {
-                        add(DatabaseEvent(
-                            id = rs.getInt("id").toString(),
-                            gcalEventId = rs.getString("gcal_event_id"),
-                            title = rs.getString("title"),
-                            beginAt = rs.getTimestamp("begin_at").toInstant().toString(),
-                            lastUpdated = rs.getTimestamp("last_updated").toInstant().toString()
-                        ))
-                    }
-                }
-            }
+        // Sync to S3 after each upsert
+        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+            uploadDatabaseToS3()
         }
     }
 
     fun closeConnection() {
         connection?.close()
         connection = null
+        // Final sync to S3 before closing
+        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+            uploadDatabaseToS3()
+        }
     }
 }
 

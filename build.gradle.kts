@@ -45,6 +45,9 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
     implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
     implementation("com.amazonaws:aws-java-sdk-ssm:1.12.+")
+
+    // AWS S3 SDK
+    implementation("software.amazon.awssdk:s3:2.20.26")
 }
 
 application {
