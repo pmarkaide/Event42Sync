@@ -1,5 +1,9 @@
 package com.Event42Sync
 
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.http.headers
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.Timestamp
@@ -11,6 +15,10 @@ import software.amazon.awssdk.core.sync.RequestBody
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.time.ZoneId
+import java.time.LocalDate
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 suspend fun fetchAllCampusEvents(access_token:String): List<Event42> {
     val client = HttpClientConfig.createClient()
@@ -226,6 +234,27 @@ class DatabaseManager private constructor() {
         // Sync to S3 after each upsert
         if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
             uploadDatabaseToS3()
+        }
+    }
+
+    fun fetchEvents(): List<DatabaseEvent> {
+        return getConnection().createStatement().use { stmt ->
+            stmt.executeQuery("""
+            SELECT id, gcal_event_id, title, begin_at, last_updated
+            FROM events
+        """).use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(DatabaseEvent(
+                            id = rs.getInt("id").toString(),
+                            gcalEventId = rs.getString("gcal_event_id"),
+                            title = rs.getString("title"),
+                            beginAt = rs.getTimestamp("begin_at").toInstant().toString(),
+                            lastUpdated = rs.getTimestamp("last_updated").toInstant().toString()
+                        ))
+                    }
+                }
+            }
         }
     }
 

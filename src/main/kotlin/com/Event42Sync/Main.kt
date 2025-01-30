@@ -391,7 +391,7 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        // reinitializeCalendar(accessGCtoken, access42Token)
+        reinitializeCalendar(accessGCtoken, access42Token)
 
         // daily sync
         syncEvents(access42Token, accessGCtoken)
