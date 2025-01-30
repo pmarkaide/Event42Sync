@@ -53,7 +53,7 @@ suspend fun fetch42AccessToken(): String {
     val clientId = Config.get("UID")
     val clientSecret = Config.get("SECRET")
 
-    val client = HttpClient()
+    val client = HttpClientConfig.createClient()
 
     try {
         val response: HttpResponse = client.post("https://api.intra.42.fr/oauth/token") {
@@ -81,12 +81,8 @@ suspend fun fetch42AccessToken(): String {
 fun fetchGCAccessToken(): String {
     val credentials = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
         // We're in AWS Lambda
-        val ssmClient = AWSSimpleSystemsManagementClientBuilder.defaultClient()
-        val privateKey = ssmClient.getParameter(
-            GetParameterRequest()
-                .withName("/event42sync/gc-private-key")
-                .withWithDecryption(true)
-        ).parameter.value
+        val privateKey = object {}.javaClass.getResourceAsStream("/gc_private_key.txt")?.bufferedReader()?.use { it.readText() }
+            ?: throw IllegalStateException("Could not read private key file")
 
         ServiceAccountCredentials.fromStream("""
             {
@@ -156,7 +152,7 @@ data class GCalEventsResponse(
 )
 
 suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     val allEvent42s = mutableListOf<Event42>()
     var currentPage = 1
     val pageSize = 30 // Number of results per page
@@ -267,7 +263,7 @@ suspend fun createGCalEvent(
 ): String? {
 
     val calendarId = Config.get("CALENDAR_ID")
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields
         val uploadEvent = event.toGCalEvent().toUploadEvent()
@@ -358,7 +354,7 @@ fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
 
 suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42: Event42) {
     val calendarId =Config.get("CALENDAR_ID")
-    val client = HttpClient(CIO)
+    val client = HttpClientConfig.createClient()
     try {
         // Transform Event42 to EventGCal and Nullify non-required fields
         val uploadEvent = event42.toGCalEvent().toUploadEvent()
@@ -395,7 +391,7 @@ fun main() = runBlocking {
         println("GC Access Token: $accessGCtoken")
 
         // init_calendar
-        // reinitializeCalendar(accessGCtoken, access42Token)
+        reinitializeCalendar(accessGCtoken, access42Token)
 
         // daily sync
         syncEvents(access42Token, accessGCtoken)
