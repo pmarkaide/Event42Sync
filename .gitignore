@@ -1,4 +1,5 @@
 .env
+*.sqlite
 src/main/resources/
 event42sync.json
 .gradle
