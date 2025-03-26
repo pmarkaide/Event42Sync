@@ -381,6 +381,63 @@ suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42:
     }
 }
 
+/////////////// DELETE all GCal events ///////////////
+
+// Data class for the event
+@Serializable
+data class EventID(val id: String)
+
+// Data class for the API response
+@Serializable
+data class EventsResponse(val items: List<EventID>)
+
+
+suspend fun deleteAllEvents(accessToken: String) {
+    val client = HttpClient(CIO)
+
+    val calendarID = Config.get("CALENDAR_ID")
+    try {
+        // Step 1: Fetch events
+        val response: HttpResponse = client.get("https://www.googleapis.com/calendar/v3/calendars/$calendarID/" +
+                "events?singleEvents=true") {
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        val jsonString = response.bodyAsText()
+        if (jsonString.isEmpty()) {
+            throw Exception("Received empty response from the API")
+        }
+        val eventList: EventsResponse = json.decodeFromString(jsonString)
+
+        // Step 2: Delete each event
+        println("Starting the deleting of events...\n")
+        eventList.items.forEach { event ->
+            try {
+                val response = client.delete("https://www.googleapis.com/calendar/v3/calendars/$calendarID/events/${event.id}") {
+                    header(HttpHeaders.Authorization, "Bearer $accessToken")
+                }
+
+                // Check if response is successful (status code 200)
+                if (response.status.value == 204) {
+                    println("[200] DELETE GCal ${event.id}")
+                } else {
+                    // Log the error response code and message
+                    println("[${response.status.value}] ERROR: ${response.bodyAsText()}")
+                }
+            } catch (e: Exception) {
+                // Handle and log the exception
+                println("[ERROR] Failed to delete event ${event.id}: ${e.message}")
+                e.printStackTrace() // Print full stack trace for debugging
+            }
+        }
+
+    } catch (e: Exception) {
+        println("Error occurred: ${e.message}")
+    } finally {
+        client.close()
+    }
+}
+
 
 fun main() = runBlocking {
     try {
