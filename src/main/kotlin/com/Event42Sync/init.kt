@@ -258,6 +258,26 @@ class DatabaseManager private constructor() {
         }
     }
 
+    fun fixNullGcalIds() {
+        try {
+            connection?.createStatement()?.use { stmt ->
+                println("Checking for null gcal_event_id values...")
+                val updatedRows = stmt.executeUpdate(
+                    "UPDATE events SET gcal_event_id = 'manual_fix_' || id WHERE gcal_event_id IS NULL"
+                )
+                println("Fixed $updatedRows events with null gcal_event_id")
+            }
+
+            // Sync to S3 after fixing
+            if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
+                uploadDatabaseToS3()
+            }
+        } catch (e: Exception) {
+            println("Error fixing null gcal_event_id values: ${e.message}")
+            throw e
+        }
+    }
+
     fun closeConnection() {
         connection?.close()
         connection = null
