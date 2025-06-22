@@ -160,7 +160,7 @@ suspend fun fetchUpdatedCampusEvents(access_token: String): List<Event42> {
     // set current time as yesterday at midnight
     // value is relative to UTC. Modify by timezones as needed
     val currentTime = LocalDate.now(zone)
-        .minusDays(1) // Move to the previous day (yesterday)
+        .minusDays(60) // Move to the previous day (yesterday)
         .atStartOfDay(zone) // Set to midnight of the previous day
         .toInstant()
     var stopPagination = false
@@ -298,6 +298,7 @@ suspend fun createGCalEvent(
 fun syncEvents(access42token: String, accessGCtoken: String) = runBlocking {
     println("Starting sync process...")
     val dbManager = DatabaseManager.getInstance()
+    dbManager.fixNullGcalIds()
 
     try {
         // 1. Fetch updated events from 42 API

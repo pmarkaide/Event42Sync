@@ -288,7 +288,7 @@ class DatabaseManager private constructor() {
     }
 }
 
-suspend fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearDatabase: Boolean = true) = runBlocking {
+fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearDatabase: Boolean = true) = runBlocking {
     try {
         println("Starting calendar reinitialization...")
 
