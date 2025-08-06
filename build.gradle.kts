@@ -3,6 +3,7 @@ plugins {
     application
     kotlin("plugin.serialization") version "1.9.24"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("io.sentry.jvm.gradle") version "5.8.0"
 }
 
 repositories {
@@ -62,4 +63,15 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     manifest {
         attributes(mapOf("Main-Class" to "com.Event42Sync.MainKt"))
     }
+}
+
+sentry {
+    // Generates a JVM (Java, Kotlin, etc.) source bundle and uploads your source code to Sentry.
+    // This enables source context, allowing you to see your source
+    // code as part of your stack traces in Sentry.
+    includeSourceContext = true
+
+    org = "pablo-markaide"
+    projectName = "event42sync"
+    authToken = System.getenv("SENTRY_AUTH_TOKEN")
 }

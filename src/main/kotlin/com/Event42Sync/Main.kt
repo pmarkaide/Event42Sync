@@ -22,7 +22,8 @@ import java.time.format.DateTimeFormatter
 import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder
 import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest
 import com.google.auth.oauth2.ServiceAccountCredentials
-
+import io.sentry.Sentry
+import java.lang.Exception
 
 
 object Config {
@@ -383,7 +384,23 @@ suspend fun updateGCalEvent(accessGCtoken: String, gcalEventId: String, event42:
 }
 
 
-fun main() = runBlocking {
+
+
+fun main(): kotlin.Unit = runBlocking {
+    Sentry.init { options ->
+        options.dsn = "https://e6dbbc063f9083fefb42302b7cec012d@o4509795883220992.ingest.de.sentry.io/4509795886170192"
+        // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing.
+        // We recommend adjusting this value in production.
+        options.tracesSampleRate = 1.0
+        // When first trying Sentry it's good to see what the SDK is doing:
+        options.isDebug = true
+    }
+
+    try {
+        throw Exception("This is a test.")
+    } catch (e: Exception) {
+        Sentry.captureException(e)
+    }
     try {
         // Fetch the access tokens
         val access42Token = fetch42AccessToken()
