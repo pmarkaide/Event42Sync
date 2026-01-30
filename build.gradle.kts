@@ -6,6 +6,10 @@ plugins {
     id("io.sentry.jvm.gradle") version "5.8.0"
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 repositories {
     mavenCentral()
 }
