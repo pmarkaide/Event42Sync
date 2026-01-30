@@ -109,8 +109,9 @@ data class DatabaseEvent(
 
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
-    private val s3Client = S3Client.builder().build()
-    private val bucketName = Config.get("S3_BUCKET_NAME")
+    // Lazy initialization - only creates S3 client when running in Lambda
+    private val s3Client by lazy { S3Client.builder().build() }
+    private val bucketName by lazy { Config.get("S3_BUCKET_NAME") }
     private val dbFileName = "events.db"
     private val localDbPath = "/tmp/$dbFileName" // For Lambda, use /tmp directory
 
