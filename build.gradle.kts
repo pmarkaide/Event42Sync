@@ -6,6 +6,10 @@ plugins {
     id("io.sentry.jvm.gradle") version "5.8.0"
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 repositories {
     mavenCentral()
 }
@@ -38,17 +42,6 @@ dependencies {
 
     // SQLite
     implementation("org.xerial:sqlite-jdbc:3.44.1.0")
-
-    // PostgresSQL
-    implementation("org.postgresql:postgresql:42.7.1")
-
-    // AWS
-    implementation("com.amazonaws:aws-lambda-java-core:1.2.3")
-    implementation("com.amazonaws:aws-lambda-java-events:3.11.3")
-    implementation("com.amazonaws:aws-java-sdk-ssm:1.12.+")
-
-    // AWS S3 SDK
-    implementation("software.amazon.awssdk:s3:2.20.26")
 }
 
 application {

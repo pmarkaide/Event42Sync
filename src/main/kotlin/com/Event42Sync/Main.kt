@@ -19,8 +19,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import com.amazonaws.services.simplesystemsmanagement.AWSSimpleSystemsManagementClientBuilder
-import com.amazonaws.services.simplesystemsmanagement.model.GetParameterRequest
 import com.google.auth.oauth2.ServiceAccountCredentials
 import io.sentry.Sentry
 import java.lang.Exception
@@ -80,29 +78,7 @@ suspend fun fetch42AccessToken(): String {
 }
 
 fun fetchGCAccessToken(): String {
-    val credentials = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-        // We're in AWS Lambda
-        val privateKey = object {}.javaClass.getResourceAsStream("/gc_private_key.txt")?.bufferedReader()?.use { it.readText() }
-            ?: throw IllegalStateException("Could not read private key file")
-
-        ServiceAccountCredentials.fromStream("""
-            {
-              "type": "service_account",
-              "project_id": "${Config.get("GC_PROJECT_ID")}",
-              "private_key_id": "${Config.get("GC_PRIVATE_KEY_ID")}",
-              "private_key": "$privateKey",
-              "client_email": "${Config.get("GC_CLIENT_EMAIL")}",
-              "client_id": "${Config.get("GC_CLIENT_ID")}",
-              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-              "token_uri": "https://oauth2.googleapis.com/token",
-              "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-              "client_x509_cert_url": "${Config.get("GC_CERT_URL")}"
-            }
-        """.trimIndent().byteInputStream())
-    } else {
-        // We're running locally
-        ServiceAccountCredentials.fromStream(FileInputStream("event42sync.json"))
-    }
+    val credentials = ServiceAccountCredentials.fromStream(FileInputStream("event42sync.json"))
 
     return credentials.createScoped(listOf(
         "https://www.googleapis.com/auth/calendar",
