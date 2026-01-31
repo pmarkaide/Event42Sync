@@ -113,7 +113,7 @@ class DatabaseManager private constructor() {
     private val s3Client by lazy { S3Client.builder().build() }
     private val bucketName by lazy { Config.get("S3_BUCKET_NAME") }
     private val dbFileName = "events.db"
-    private val localDbPath = "/tmp/$dbFileName" // For Lambda, use /tmp directory
+    private val localDbPath = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) "/tmp/$dbFileName" else dbFileName
 
     init {
         Class.forName("org.sqlite.JDBC")
