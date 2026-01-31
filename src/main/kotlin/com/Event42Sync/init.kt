@@ -8,13 +8,6 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.Timestamp
 import java.time.Instant
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.GetObjectRequest
-import software.amazon.awssdk.services.s3.model.PutObjectRequest
-import software.amazon.awssdk.core.sync.RequestBody
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.time.ZoneId
 import java.time.LocalDate
 import kotlinx.coroutines.delay
@@ -109,18 +102,10 @@ data class DatabaseEvent(
 
 class DatabaseManager private constructor() {
     private var connection: Connection? = null
-    // Lazy initialization - only creates S3 client when running in Lambda
-    private val s3Client by lazy { S3Client.builder().build() }
-    private val bucketName by lazy { Config.get("S3_BUCKET_NAME") }
     private val dbFileName = "events.db"
-    private val localDbPath = if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) "/tmp/$dbFileName" else dbFileName
 
     init {
         Class.forName("org.sqlite.JDBC")
-        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-            // We're in AWS Lambda
-            downloadDatabaseFromS3()
-        }
     }
 
     companion object {
@@ -137,46 +122,15 @@ class DatabaseManager private constructor() {
         }
     }
 
-    private fun downloadDatabaseFromS3() {
-        try {
-            val getObjectRequest = GetObjectRequest.builder()
-                .bucket(bucketName)
-                .key(dbFileName)
-                .build()
-
-            s3Client.getObject(getObjectRequest).use { response ->
-                Files.copy(response, File(localDbPath).toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-        } catch (e: Exception) {
-            println("Failed to download database from S3 (this is normal for first run): ${e.message}")
-            // If download fails, a new database will be created
-        }
-    }
-
-    private fun uploadDatabaseToS3() {
-        try {
-            val putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(dbFileName)
-                .build()
-
-            s3Client.putObject(putObjectRequest, RequestBody.fromFile(File(localDbPath)))
-        } catch (e: Exception) {
-            println("Failed to upload database to S3: ${e.message}")
-            throw e
-        }
-    }
-
     private fun getConnection(): Connection {
         return connection ?: synchronized(this) {
             try {
                 println("Attempting to connect to SQLite database...")
-                // For Lambda, use the local temp directory
-                connection = DriverManager.getConnection("jdbc:sqlite:$localDbPath")
-                println("✅ Connection successful!")
+                connection = DriverManager.getConnection("jdbc:sqlite:$dbFileName")
+                println("Connection successful!")
                 connection!!
             } catch (e: Exception) {
-                println("❌ Database connection failed:")
+                println("Database connection failed:")
                 println("Error type: ${e.javaClass.name}")
                 println("Error message: ${e.message}")
                 e.printStackTrace()
@@ -188,7 +142,6 @@ class DatabaseManager private constructor() {
     private fun initializeDatabase() {
         try {
             getConnection().createStatement().use { stmt ->
-                // SQLite uses INTEGER PRIMARY KEY for autoincrementing primary keys
                 stmt.execute("""
                     CREATE TABLE IF NOT EXISTS events (
                         id INTEGER PRIMARY KEY,
@@ -206,17 +159,11 @@ class DatabaseManager private constructor() {
         }
     }
 
-    // The rest of the methods remain largely the same, just add S3 sync after modifications
-
     fun clearDatabase() {
         getConnection().createStatement().use { stmt ->
             println("Clearing all events from database...")
             stmt.execute("DELETE FROM events")
-            println("✅ Database cleared successfully!")
-        }
-        // Sync to S3 after clearing
-        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-            uploadDatabaseToS3()
+            println("Database cleared successfully!")
         }
     }
 
@@ -231,10 +178,6 @@ class DatabaseManager private constructor() {
             stmt.setTimestamp(4, Timestamp.from(Instant.parse(beginAt)))
             stmt.setTimestamp(5, Timestamp.from(Instant.parse(lastUpdated)))
             stmt.executeUpdate()
-        }
-        // Sync to S3 after each upsert
-        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-            uploadDatabaseToS3()
         }
     }
 
@@ -268,11 +211,6 @@ class DatabaseManager private constructor() {
                 )
                 println("Fixed $updatedRows events with null gcal_event_id")
             }
-
-            // Sync to S3 after fixing
-            if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-                uploadDatabaseToS3()
-            }
         } catch (e: Exception) {
             println("Error fixing null gcal_event_id values: ${e.message}")
             throw e
@@ -282,10 +220,6 @@ class DatabaseManager private constructor() {
     fun closeConnection() {
         connection?.close()
         connection = null
-        // Final sync to S3 before closing
-        if (System.getenv("AWS_LAMBDA_FUNCTION_NAME") != null) {
-            uploadDatabaseToS3()
-        }
     }
 }
 
@@ -296,7 +230,7 @@ fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearData
         // Step 1: Delete all events from Google Calendar
         println("Deleting all calendar events from Google Calendar...")
         deleteAllEvents(accessGCtoken)
-        println("✅ Calendar cleared successfully!")
+        println("Calendar cleared successfully!")
 
         // Step 2: Clear database if requested
         val dbManager = DatabaseManager.getInstance()
@@ -307,7 +241,7 @@ fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearData
         // Step 3: Fetch all events from 42 API
         println("Fetching events from 42 API...")
         val allEvents = fetchAllCampusEvents(access42token)
-        println("✅ Total events fetched: ${allEvents.size}")
+        println("Total events fetched: ${allEvents.size}")
 
         // Step 4: Upload events to new calendar and database
         println("Uploading events to Google Calendar and database...")
@@ -329,12 +263,11 @@ fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearData
                         successCount++
                     } else {
                         failureCount++
-                        println("❌ Failed to create GCal event for: ${event.name}")
+                        println("Failed to create GCal event for: ${event.name}")
                     }
                 } catch (e: Exception) {
                     failureCount++
-                    println("❌ Error processing event ${event.name}: ${e.message}")
-                    // Continue with next event instead of breaking
+                    println("Error processing event ${event.name}: ${e.message}")
                 }
             }
         } finally {
@@ -348,7 +281,7 @@ fun reinitializeCalendar(accessGCtoken: String, access42token: String, clearData
         println("- Failed: $failureCount")
 
     } catch (e: Exception) {
-        println("❌ Error during reinitialization: ${e.message}")
+        println("Error during reinitialization: ${e.message}")
         throw e
     }
 }
